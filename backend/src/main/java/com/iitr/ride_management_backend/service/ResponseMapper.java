@@ -1,0 +1,137 @@
+package com.iitr.ride_management_backend.service;
+
+import com.iitr.ride_management_backend.domain.DriverProfile;
+import com.iitr.ride_management_backend.domain.PassengerProfile;
+import com.iitr.ride_management_backend.domain.Rating;
+import com.iitr.ride_management_backend.domain.Ride;
+import com.iitr.ride_management_backend.domain.User;
+import com.iitr.ride_management_backend.domain.Vehicle;
+import com.iitr.ride_management_backend.dto.BasicUserResponse;
+import com.iitr.ride_management_backend.dto.DriverDetailsResponse;
+import com.iitr.ride_management_backend.dto.DriverSummaryResponse;
+import com.iitr.ride_management_backend.dto.PassengerDetailsResponse;
+import com.iitr.ride_management_backend.dto.RatingResponse;
+import com.iitr.ride_management_backend.dto.RideResponse;
+import com.iitr.ride_management_backend.dto.UserResponse;
+import com.iitr.ride_management_backend.dto.VehicleResponse;
+import com.iitr.ride_management_backend.repository.DriverProfileRepository;
+import com.iitr.ride_management_backend.repository.PassengerProfileRepository;
+import com.iitr.ride_management_backend.repository.RatingRepository;
+import com.iitr.ride_management_backend.repository.VehicleRepository;
+import org.springframework.stereotype.Component;
+
+@Component
+public class ResponseMapper {
+
+    private final PassengerProfileRepository passengerProfileRepository;
+    private final DriverProfileRepository driverProfileRepository;
+    private final VehicleRepository vehicleRepository;
+    private final RatingRepository ratingRepository;
+
+    public ResponseMapper(
+            PassengerProfileRepository passengerProfileRepository,
+            DriverProfileRepository driverProfileRepository,
+            VehicleRepository vehicleRepository,
+            RatingRepository ratingRepository
+    ) {
+        this.passengerProfileRepository = passengerProfileRepository;
+        this.driverProfileRepository = driverProfileRepository;
+        this.vehicleRepository = vehicleRepository;
+        this.ratingRepository = ratingRepository;
+    }
+
+    public BasicUserResponse basicUser(User user) {
+        if (user == null) {
+            return null;
+        }
+        return new BasicUserResponse(user.getId(), user.getName(), user.getEmail(), user.getPhone(), user.getRole());
+    }
+
+    public UserResponse userResponse(User user) {
+        PassengerDetailsResponse passengerDetails = passengerProfileRepository.findByUserId(user.getId())
+                .map(this::passengerDetails)
+                .orElse(null);
+        DriverDetailsResponse driverDetails = driverProfileRepository.findByUserId(user.getId())
+                .map(this::driverDetails)
+                .orElse(null);
+        return new UserResponse(
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                user.getPhone(),
+                user.getRole(),
+                user.getCreatedAt(),
+                passengerDetails,
+                driverDetails
+        );
+    }
+
+    public DriverSummaryResponse driverSummary(DriverProfile profile) {
+        User driver = profile.getUser();
+        return new DriverSummaryResponse(
+                driver.getId(),
+                driver.getName(),
+                driver.getPhone(),
+                profile.getAvailabilityStatus(),
+                profile.getAverageRating(),
+                profile.getRatingCount(),
+                vehicleRepository.findByDriverId(driver.getId()).map(this::vehicleResponse).orElse(null)
+        );
+    }
+
+    public RideResponse rideResponse(Ride ride) {
+        RatingResponse rating = ratingRepository.findByRideId(ride.getId()).map(this::ratingResponse).orElse(null);
+        return new RideResponse(
+                ride.getId(),
+                basicUser(ride.getPassenger()),
+                basicUser(ride.getDriver()),
+                ride.getPickupLocation(),
+                ride.getDestination(),
+                ride.getStatus(),
+                ride.getRequestedAt(),
+                ride.getAcceptedAt(),
+                ride.getStartedAt(),
+                ride.getCompletedAt(),
+                ride.getCancelledAt(),
+                rating
+        );
+    }
+
+    public RatingResponse ratingResponse(Rating rating) {
+        return new RatingResponse(
+                rating.getId(),
+                rating.getRide().getId(),
+                rating.getPassenger().getId(),
+                rating.getDriver().getId(),
+                rating.getScore(),
+                rating.getFeedback(),
+                rating.getCreatedAt()
+        );
+    }
+
+    private PassengerDetailsResponse passengerDetails(PassengerProfile profile) {
+        return new PassengerDetailsResponse(profile.getId(), profile.getCampusAddress());
+    }
+
+    private DriverDetailsResponse driverDetails(DriverProfile profile) {
+        return new DriverDetailsResponse(
+                profile.getId(),
+                profile.getLicenseNumber(),
+                profile.getVerificationDocument(),
+                profile.getVerificationStatus(),
+                profile.getAvailabilityStatus(),
+                profile.getAverageRating(),
+                profile.getRatingCount(),
+                vehicleRepository.findByDriverId(profile.getUser().getId()).map(this::vehicleResponse).orElse(null)
+        );
+    }
+
+    private VehicleResponse vehicleResponse(Vehicle vehicle) {
+        return new VehicleResponse(
+                vehicle.getId(),
+                vehicle.getVehicleNumber(),
+                vehicle.getVehicleType(),
+                vehicle.getCapacity()
+        );
+    }
+}

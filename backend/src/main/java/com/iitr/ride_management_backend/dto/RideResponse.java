@@ -15,6 +15,8 @@ public record RideResponse(
         Instant startedAt,
         Instant completedAt,
         Instant cancelledAt,
+        BasicUserResponse latestRejectedBy,
+        Instant latestRejectedAt,
         RatingResponse rating
 ) {
 }

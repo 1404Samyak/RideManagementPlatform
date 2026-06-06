@@ -127,6 +127,7 @@ public class RideService {
         }
         RideResponse response = mapper.rideResponse(ride);
         realtimeService.driverDashboardChanged(user.getId(), "RIDE_REJECTED", response);
+        realtimeService.rideChanged("RIDE_REJECTED", "Ride rejected by " + user.getName(), response);
         return response;
     }
 

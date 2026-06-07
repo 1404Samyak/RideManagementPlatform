@@ -6,6 +6,8 @@ import com.iitr.ride_management_backend.domain.RideStatus;
 import com.iitr.ride_management_backend.domain.Role;
 import com.iitr.ride_management_backend.domain.User;
 import com.iitr.ride_management_backend.dto.DriverDashboardResponse;
+import com.iitr.ride_management_backend.dto.DriverLocationRequest;
+import com.iitr.ride_management_backend.dto.DriverLocationResponse;
 import com.iitr.ride_management_backend.dto.DriverSummaryResponse;
 import com.iitr.ride_management_backend.dto.RatingResponse;
 import com.iitr.ride_management_backend.dto.RideResponse;
@@ -16,6 +18,7 @@ import com.iitr.ride_management_backend.exception.NotFoundException;
 import com.iitr.ride_management_backend.repository.DriverProfileRepository;
 import com.iitr.ride_management_backend.repository.RatingRepository;
 import com.iitr.ride_management_backend.repository.RideRepository;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -76,6 +79,28 @@ public class DriverService {
                 .stream()
                 .map(mapper::driverSummary)
                 .toList();
+    }
+
+    @Transactional
+    public DriverLocationResponse updateLocation(User user, DriverLocationRequest request) {
+        DriverProfile profile = requireDriverProfile(user);
+        if (profile.getAvailabilityStatus() == AvailabilityStatus.OFFLINE) {
+            throw new BadRequestException("Go online before sending live location");
+        }
+
+        profile.setCurrentLatitude(request.latitude());
+        profile.setCurrentLongitude(request.longitude());
+        profile.setLocationAccuracy(request.accuracy());
+        profile.setLastLocationUpdatedAt(Instant.now());
+        DriverProfile savedProfile = driverProfileRepository.save(profile);
+        DriverLocationResponse location = mapper.driverLocation(savedProfile);
+        realtimeService.driverLocationChanged(location);
+
+        rideRepository.findByDriverIdAndStatusInOrderByRequestedAtDesc(user.getId(), ACTIVE_RIDE_STATUSES)
+                .stream()
+                .findFirst()
+                .ifPresent(ride -> realtimeService.driverLocationChangedForRide(mapper.rideResponse(ride), location));
+        return location;
     }
 
     @Transactional(readOnly = true)

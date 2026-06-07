@@ -42,6 +42,11 @@ public class Ride {
     @Column(nullable = false)
     private String destination;
 
+    private Double pickupLatitude;
+    private Double pickupLongitude;
+    private Double destinationLatitude;
+    private Double destinationLongitude;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private RideStatus status = RideStatus.REQUESTED;
@@ -57,9 +62,21 @@ public class Ride {
     @Version
     private Long version;
 
-    public Ride(User passenger, String pickupLocation, String destination) {
+    public Ride(
+            User passenger,
+            String pickupLocation,
+            String destination,
+            Double pickupLatitude,
+            Double pickupLongitude,
+            Double destinationLatitude,
+            Double destinationLongitude
+    ) {
         this.passenger = passenger;
         this.pickupLocation = pickupLocation;
         this.destination = destination;
+        this.pickupLatitude = pickupLatitude;
+        this.pickupLongitude = pickupLongitude;
+        this.destinationLatitude = destinationLatitude;
+        this.destinationLongitude = destinationLongitude;
     }
 }

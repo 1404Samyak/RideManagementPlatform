@@ -9,6 +9,10 @@ public record RideResponse(
         BasicUserResponse driver,
         String pickupLocation,
         String destination,
+        Double pickupLatitude,
+        Double pickupLongitude,
+        Double destinationLatitude,
+        Double destinationLongitude,
         RideStatus status,
         Instant requestedAt,
         Instant acceptedAt,
@@ -17,6 +21,7 @@ public record RideResponse(
         Instant cancelledAt,
         BasicUserResponse latestRejectedBy,
         Instant latestRejectedAt,
-        RatingResponse rating
+        RatingResponse rating,
+        DriverLocationResponse driverLocation
 ) {
 }

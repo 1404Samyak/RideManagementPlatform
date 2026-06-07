@@ -1,5 +1,6 @@
 package com.iitr.ride_management_backend.service;
 
+import com.iitr.ride_management_backend.domain.CampusLocation;
 import com.iitr.ride_management_backend.domain.DriverProfile;
 import com.iitr.ride_management_backend.domain.PassengerProfile;
 import com.iitr.ride_management_backend.domain.Rating;
@@ -8,7 +9,9 @@ import com.iitr.ride_management_backend.domain.RideRejection;
 import com.iitr.ride_management_backend.domain.User;
 import com.iitr.ride_management_backend.domain.Vehicle;
 import com.iitr.ride_management_backend.dto.BasicUserResponse;
+import com.iitr.ride_management_backend.dto.CampusLocationResponse;
 import com.iitr.ride_management_backend.dto.DriverDetailsResponse;
+import com.iitr.ride_management_backend.dto.DriverLocationResponse;
 import com.iitr.ride_management_backend.dto.DriverSummaryResponse;
 import com.iitr.ride_management_backend.dto.PassengerDetailsResponse;
 import com.iitr.ride_management_backend.dto.RatingResponse;
@@ -80,19 +83,29 @@ public class ResponseMapper {
                 profile.getAvailabilityStatus(),
                 profile.getAverageRating(),
                 profile.getRatingCount(),
-                vehicleRepository.findByDriverId(driver.getId()).map(this::vehicleResponse).orElse(null)
+                vehicleRepository.findByDriverId(driver.getId()).map(this::vehicleResponse).orElse(null),
+                driverLocation(profile)
         );
     }
 
     public RideResponse rideResponse(Ride ride) {
         RatingResponse rating = ratingRepository.findByRideId(ride.getId()).map(this::ratingResponse).orElse(null);
         RideRejection latestRejection = rideRejectionRepository.findTopByRideIdOrderByRejectedAtDesc(ride.getId()).orElse(null);
+        DriverLocationResponse driverLocation = ride.getDriver() == null
+                ? null
+                : driverProfileRepository.findByUserId(ride.getDriver().getId())
+                .map(this::driverLocation)
+                .orElse(null);
         return new RideResponse(
                 ride.getId(),
                 basicUser(ride.getPassenger()),
                 basicUser(ride.getDriver()),
                 ride.getPickupLocation(),
                 ride.getDestination(),
+                ride.getPickupLatitude(),
+                ride.getPickupLongitude(),
+                ride.getDestinationLatitude(),
+                ride.getDestinationLongitude(),
                 ride.getStatus(),
                 ride.getRequestedAt(),
                 ride.getAcceptedAt(),
@@ -101,7 +114,32 @@ public class ResponseMapper {
                 ride.getCancelledAt(),
                 latestRejection == null ? null : basicUser(latestRejection.getDriver()),
                 latestRejection == null ? null : latestRejection.getRejectedAt(),
-                rating
+                rating,
+                driverLocation
+        );
+    }
+
+    public CampusLocationResponse campusLocationResponse(CampusLocation location) {
+        return new CampusLocationResponse(
+                location.getId(),
+                location.getName(),
+                location.getCategory(),
+                location.getLatitude(),
+                location.getLongitude()
+        );
+    }
+
+    public DriverLocationResponse driverLocation(DriverProfile profile) {
+        if (profile.getCurrentLatitude() == null || profile.getCurrentLongitude() == null) {
+            return null;
+        }
+        return new DriverLocationResponse(
+                profile.getUser().getId(),
+                profile.getUser().getName(),
+                profile.getCurrentLatitude(),
+                profile.getCurrentLongitude(),
+                profile.getLocationAccuracy(),
+                profile.getLastLocationUpdatedAt()
         );
     }
 
@@ -130,7 +168,8 @@ public class ResponseMapper {
                 profile.getAvailabilityStatus(),
                 profile.getAverageRating(),
                 profile.getRatingCount(),
-                vehicleRepository.findByDriverId(profile.getUser().getId()).map(this::vehicleResponse).orElse(null)
+                vehicleRepository.findByDriverId(profile.getUser().getId()).map(this::vehicleResponse).orElse(null),
+                driverLocation(profile)
         );
     }
 

@@ -1,6 +1,7 @@
 package com.iitr.ride_management_backend.service;
 
 import com.iitr.ride_management_backend.domain.AvailabilityStatus;
+import com.iitr.ride_management_backend.domain.CampusLocation;
 import com.iitr.ride_management_backend.domain.DriverProfile;
 import com.iitr.ride_management_backend.domain.Ride;
 import com.iitr.ride_management_backend.domain.RideRejection;
@@ -12,6 +13,7 @@ import com.iitr.ride_management_backend.dto.RideResponse;
 import com.iitr.ride_management_backend.exception.BadRequestException;
 import com.iitr.ride_management_backend.exception.ForbiddenException;
 import com.iitr.ride_management_backend.exception.NotFoundException;
+import com.iitr.ride_management_backend.repository.CampusLocationRepository;
 import com.iitr.ride_management_backend.repository.DriverProfileRepository;
 import com.iitr.ride_management_backend.repository.RideRejectionRepository;
 import com.iitr.ride_management_backend.repository.RideRepository;
@@ -32,6 +34,7 @@ public class RideService {
     private final RideRepository rideRepository;
     private final RideRejectionRepository rideRejectionRepository;
     private final DriverProfileRepository driverProfileRepository;
+    private final CampusLocationRepository campusLocationRepository;
     private final DriverService driverService;
     private final ResponseMapper mapper;
     private final RealtimeService realtimeService;
@@ -40,6 +43,7 @@ public class RideService {
             RideRepository rideRepository,
             RideRejectionRepository rideRejectionRepository,
             DriverProfileRepository driverProfileRepository,
+            CampusLocationRepository campusLocationRepository,
             DriverService driverService,
             ResponseMapper mapper,
             RealtimeService realtimeService
@@ -47,6 +51,7 @@ public class RideService {
         this.rideRepository = rideRepository;
         this.rideRejectionRepository = rideRejectionRepository;
         this.driverProfileRepository = driverProfileRepository;
+        this.campusLocationRepository = campusLocationRepository;
         this.driverService = driverService;
         this.mapper = mapper;
         this.realtimeService = realtimeService;
@@ -61,7 +66,20 @@ public class RideService {
         if (hasActiveRide) {
             throw new BadRequestException("You already have an active ride");
         }
-        Ride ride = new Ride(user, request.pickupLocation().trim(), request.destination().trim());
+        ResolvedLocation pickup = resolveLocation(request.pickupLocation(), request.pickupLocationId());
+        ResolvedLocation destination = resolveLocation(request.destination(), request.destinationLocationId());
+        if (pickup.name().equalsIgnoreCase(destination.name())) {
+            throw new BadRequestException("Pickup and destination must be different");
+        }
+        Ride ride = new Ride(
+                user,
+                pickup.name(),
+                destination.name(),
+                pickup.latitude(),
+                pickup.longitude(),
+                destination.latitude(),
+                destination.longitude()
+        );
         RideResponse response = mapper.rideResponse(rideRepository.save(ride));
         realtimeService.rideRequested(response);
         return response;
@@ -205,6 +223,19 @@ public class RideService {
         return rideRepository.findById(rideId).orElseThrow(() -> new NotFoundException("Ride not found"));
     }
 
+    private ResolvedLocation resolveLocation(String typedName, Long locationId) {
+        if (locationId != null) {
+            CampusLocation location = campusLocationRepository.findById(locationId)
+                    .orElseThrow(() -> new NotFoundException("Campus location not found"));
+            return new ResolvedLocation(location.getName(), location.getLatitude(), location.getLongitude());
+        }
+
+        String name = typedName.trim();
+        return campusLocationRepository.findByNameIgnoreCase(name)
+                .map(location -> new ResolvedLocation(location.getName(), location.getLatitude(), location.getLongitude()))
+                .orElseGet(() -> new ResolvedLocation(name, null, null));
+    }
+
     private void requirePassenger(User user) {
         if (user.getRole() != Role.PASSENGER) {
             throw new ForbiddenException("Passenger access required");
@@ -224,5 +255,8 @@ public class RideService {
         if (!passengerOwnsRide && !driverOwnsRide && !requestedRideForDriverPool) {
             throw new ForbiddenException("You cannot view this ride");
         }
+    }
+
+    private record ResolvedLocation(String name, Double latitude, Double longitude) {
     }
 }

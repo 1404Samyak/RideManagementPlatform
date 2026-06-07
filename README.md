@@ -101,6 +101,70 @@ Tables are created/updated automatically by Spring Boot JPA using:
 spring.jpa.hibernate.ddl-auto=update
 ```
 
+## pgAdmin Setup
+
+pgAdmin is optional, but it is the easiest way to view tables and manually edit campus map coordinates.
+
+1. Download pgAdmin from:
+
+```text
+https://www.pgadmin.org/download/
+```
+
+2. Open pgAdmin and create a master password if it asks.
+
+3. Register the local PostgreSQL server:
+
+```text
+Right click Servers -> Register -> Server
+```
+
+General tab:
+
+```text
+Name: Ride Management Local
+```
+
+Connection tab:
+
+```text
+Host name/address: localhost
+Port: 5432
+Maintenance database: ride_management_db
+Username: ride_user
+Password: ride_password
+```
+
+4. Open the query tool:
+
+```text
+Servers -> Ride Management Local -> Databases -> ride_management_db -> Tools -> Query Tool
+```
+
+5. Add a new campus location:
+
+```sql
+INSERT INTO campus_locations (name, category, latitude, longitude)
+VALUES ('Department of CSE', 'Academic', 29.000000, 77.000000);
+```
+
+6. Update an existing campus location:
+
+```sql
+UPDATE campus_locations
+SET latitude = 29.864123,
+    longitude = 77.897456
+WHERE name = 'Central Library';
+```
+
+7. View all campus locations:
+
+```sql
+SELECT * FROM campus_locations ORDER BY name;
+```
+
+Each teammate's local PostgreSQL database is separate. Data is shared between teammates only if everyone connects to the same hosted/shared PostgreSQL database.
+
 ## Quick Start
 
 1. Start PostgreSQL locally.

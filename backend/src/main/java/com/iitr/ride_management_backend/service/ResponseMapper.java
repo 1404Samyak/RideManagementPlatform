@@ -18,6 +18,7 @@ import com.iitr.ride_management_backend.dto.RatingResponse;
 import com.iitr.ride_management_backend.dto.RideResponse;
 import com.iitr.ride_management_backend.dto.UserResponse;
 import com.iitr.ride_management_backend.dto.VehicleResponse;
+import com.iitr.ride_management_backend.repository.CampusLocationRepository;
 import com.iitr.ride_management_backend.repository.DriverProfileRepository;
 import com.iitr.ride_management_backend.repository.PassengerProfileRepository;
 import com.iitr.ride_management_backend.repository.RatingRepository;
@@ -28,6 +29,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ResponseMapper {
 
+    private final CampusLocationRepository campusLocationRepository;
     private final PassengerProfileRepository passengerProfileRepository;
     private final DriverProfileRepository driverProfileRepository;
     private final VehicleRepository vehicleRepository;
@@ -35,12 +37,14 @@ public class ResponseMapper {
     private final RideRejectionRepository rideRejectionRepository;
 
     public ResponseMapper(
+            CampusLocationRepository campusLocationRepository,
             PassengerProfileRepository passengerProfileRepository,
             DriverProfileRepository driverProfileRepository,
             VehicleRepository vehicleRepository,
             RatingRepository ratingRepository,
             RideRejectionRepository rideRejectionRepository
     ) {
+        this.campusLocationRepository = campusLocationRepository;
         this.passengerProfileRepository = passengerProfileRepository;
         this.driverProfileRepository = driverProfileRepository;
         this.vehicleRepository = vehicleRepository;
@@ -96,16 +100,26 @@ public class ResponseMapper {
                 : driverProfileRepository.findByUserId(ride.getDriver().getId())
                 .map(this::driverLocation)
                 .orElse(null);
+        ResolvedMapPoint pickup = resolveMapPoint(
+                ride.getPickupLocation(),
+                ride.getPickupLatitude(),
+                ride.getPickupLongitude()
+        );
+        ResolvedMapPoint destination = resolveMapPoint(
+                ride.getDestination(),
+                ride.getDestinationLatitude(),
+                ride.getDestinationLongitude()
+        );
         return new RideResponse(
                 ride.getId(),
                 basicUser(ride.getPassenger()),
                 basicUser(ride.getDriver()),
                 ride.getPickupLocation(),
                 ride.getDestination(),
-                ride.getPickupLatitude(),
-                ride.getPickupLongitude(),
-                ride.getDestinationLatitude(),
-                ride.getDestinationLongitude(),
+                pickup.latitude(),
+                pickup.longitude(),
+                destination.latitude(),
+                destination.longitude(),
                 ride.getStatus(),
                 ride.getRequestedAt(),
                 ride.getAcceptedAt(),
@@ -180,5 +194,17 @@ public class ResponseMapper {
                 vehicle.getVehicleType(),
                 vehicle.getCapacity()
         );
+    }
+
+    private ResolvedMapPoint resolveMapPoint(String locationName, Double fallbackLatitude, Double fallbackLongitude) {
+        if (locationName != null) {
+            return campusLocationRepository.findByNameIgnoreCase(locationName)
+                    .map(location -> new ResolvedMapPoint(location.getLatitude(), location.getLongitude()))
+                    .orElseGet(() -> new ResolvedMapPoint(fallbackLatitude, fallbackLongitude));
+        }
+        return new ResolvedMapPoint(fallbackLatitude, fallbackLongitude);
+    }
+
+    private record ResolvedMapPoint(Double latitude, Double longitude) {
     }
 }

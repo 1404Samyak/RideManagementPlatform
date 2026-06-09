@@ -25,10 +25,16 @@ public class CampusLocationSeeder {
                     new CampusLocation("Convocation Hall", "Academic", 29.86382, 77.89869),
                     new CampusLocation("Hospital", "Health", 29.86881, 77.90112),
                     new CampusLocation("LBS Stadium", "Sports", 29.86856, 77.89982),
-                    new CampusLocation("Rajiv Bhawan", "Hostel", 29.86998, 77.89421),
-                    new CampusLocation("Cautley Bhawan", "Hostel", 29.86633, 77.89217),
-                    new CampusLocation("Ravindra Bhawan", "Hostel", 29.86931, 77.89294),
-                    new CampusLocation("Jawahar Bhawan", "Hostel", 29.86365, 77.89365)
+                    new CampusLocation("Cautley Bhawan", "Hostel", 29.87059, 77.89516),
+                    new CampusLocation("Ganga Bhawan", "Hostel", 29.8716973, 77.8944982),
+                    new CampusLocation("Govind Bhawan", "Hostel", 29.8620251, 77.8937627),
+                    new CampusLocation("Jawahar Bhawan", "Hostel", 29.8629673, 77.9007985),
+                    new CampusLocation("Kasturba Bhawan", "Hostel", 29.8671322, 77.9010639),
+                    new CampusLocation("Radhakrishnan Bhawan", "Hostel", 29.8714216, 77.8955671),
+                    new CampusLocation("Rajendra Bhawan", "Hostel", 29.8703498, 77.8940392),
+                    new CampusLocation("Rajiv Bhawan", "Hostel", 29.8697272, 77.8948608),
+                    new CampusLocation("Ravindra Bhawan", "Hostel", 29.8653819, 77.8924658),
+                    new CampusLocation("Sarojini Bhawan", "Hostel", 29.8647841, 77.8998410)
             ));
         };
     }

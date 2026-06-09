@@ -812,3 +812,165 @@ button:disabled {
     justify-self: start;
   }
 }
+/* ── Ride Request Animation ─────────────────────────────────────────────── */
+
+.ride-anim-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(23, 32, 42, 0.52);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: overlay-in 0.2s ease;
+}
+
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.ride-anim-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 40px 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  box-shadow: 0 24px 64px rgba(23, 32, 42, 0.22);
+  animation: card-pop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+  min-width: 280px;
+}
+
+@keyframes card-pop {
+  from { transform: scale(0.82); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+
+/* ── Moving rickshaw track ───────────────────────────────────────────────── */
+
+.rickshaw-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 220px;
+  position: relative;
+  overflow: hidden;
+}
+
+.rickshaw-emoji {
+  font-size: 36px;
+  animation: rickshaw-move 1.6s ease-in-out infinite;
+  display: inline-block;
+  filter: drop-shadow(0 4px 8px rgba(15,118,110,0.18));
+}
+
+@keyframes rickshaw-move {
+  0%   { transform: translateX(0px)   rotate(0deg); }
+  25%  { transform: translateX(6px)   rotate(-2deg); }
+  50%  { transform: translateX(12px)  rotate(0deg); }
+  75%  { transform: translateX(6px)   rotate(2deg); }
+  100% { transform: translateX(0px)   rotate(0deg); }
+}
+
+.track-dots {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.track-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--teal);
+  opacity: 0.25;
+  animation: dot-pulse 1.2s ease-in-out infinite;
+}
+
+.track-dots span:nth-child(1) { animation-delay: 0s; }
+.track-dots span:nth-child(2) { animation-delay: 0.15s; }
+.track-dots span:nth-child(3) { animation-delay: 0.30s; }
+.track-dots span:nth-child(4) { animation-delay: 0.45s; }
+.track-dots span:nth-child(5) { animation-delay: 0.60s; }
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.35); }
+}
+
+/* ── Tick circle animation ───────────────────────────────────────────────── */
+
+.tick-circle {
+  width: 80px;
+  height: 80px;
+}
+
+.tick-svg {
+  width: 80px;
+  height: 80px;
+  animation: tick-appear 0.3s ease forwards;
+}
+
+@keyframes tick-appear {
+  from { transform: scale(0.6); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+
+.tick-circle-bg {
+  fill: none;
+  stroke: var(--teal);
+  stroke-width: 2.5;
+  stroke-dasharray: 166;
+  stroke-dashoffset: 166;
+  animation: circle-draw 0.55s ease forwards;
+}
+
+@keyframes circle-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.tick-check {
+  fill: none;
+  stroke: var(--teal);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: check-draw 0.35s ease 0.5s forwards;
+}
+
+@keyframes check-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+/* ── Animation labels ────────────────────────────────────────────────────── */
+
+.ride-anim-label {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--ink);
+  text-align: center;
+}
+
+.ride-anim-label.success {
+  color: var(--teal-dark);
+  animation: label-bounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.7s both;
+}
+
+@keyframes label-bounce {
+  from { transform: scale(0.88); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+
+.ride-anim-sub {
+  margin: -10px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  animation: label-bounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.85s both;
+}

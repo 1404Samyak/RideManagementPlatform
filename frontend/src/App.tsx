@@ -57,6 +57,50 @@ const mapIcons = {
   driver: mapIcon('R', 'driver')
 };
 
+// ── Ride Request Animation Overlay ────────────────────────────────────────────
+type RideAnimationState = 'requesting' | 'success' | null;
+
+function RideRequestAnimation({ state, onDone }: { state: RideAnimationState; onDone: () => void }) {
+  useEffect(() => {
+    if (state === 'success') {
+      const timer = setTimeout(onDone, 2600);
+      return () => clearTimeout(timer);
+    }
+  }, [state, onDone]);
+
+  if (!state) return null;
+
+  return (
+    <div className="ride-anim-overlay">
+      <div className="ride-anim-card">
+        {state === 'requesting' && (
+          <>
+            <div className="rickshaw-track">
+              <span className="rickshaw-emoji">🛺</span>
+              <div className="track-dots">
+                <span /><span /><span /><span /><span />
+              </div>
+            </div>
+            <p className="ride-anim-label">Finding your ride…</p>
+          </>
+        )}
+        {state === 'success' && (
+          <>
+            <div className="tick-circle">
+              <svg viewBox="0 0 52 52" className="tick-svg">
+                <circle className="tick-circle-bg" cx="26" cy="26" r="24" />
+                <path className="tick-check" d="M14 26 l8 8 l16 -16" />
+              </svg>
+            </div>
+            <p className="ride-anim-label success">Ride requested!</p>
+            <p className="ride-anim-sub">Waiting for a driver to accept</p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState<AuthResponse | null>(() => sessionStore.read());
   const [notice, setNotice] = useState('Ready for campus rides');
@@ -367,6 +411,7 @@ function PassengerDashboard({
   const [error, setError] = useState('');
   const [pickupLocationId, setPickupLocationId] = useState<number | null>(null);
   const [destinationLocationId, setDestinationLocationId] = useState<number | null>(null);
+  const [rideAnimState, setRideAnimState] = useState<RideAnimationState>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -398,29 +443,35 @@ function PassengerDashboard({
   const completedRides = rides.filter((ride) => ride.status === 'COMPLETED');
 
   async function requestRide(event: React.FormEvent) {
-    event.preventDefault();
-    setError('');
-    if (!selectedPickup || !selectedDestination) {
-      setError('Select pickup and destination');
-      return;
-    }
-    if (selectedPickup.id === selectedDestination.id) {
-      setError('Pickup and destination must be different');
-      return;
-    }
-    try {
-      await api.createRide(token, {
+  event.preventDefault();
+  setError('');
+  if (!selectedPickup || !selectedDestination) {
+    setError('Select pickup and destination');
+    return;
+  }
+  if (selectedPickup.id === selectedDestination.id) {
+    setError('Pickup and destination must be different');
+    return;
+  }
+  setRideAnimState('requesting');
+  try {
+    await Promise.all([
+      api.createRide(token, {
         pickupLocation: selectedPickup.name,
         destination: selectedDestination.name,
         pickupLocationId: selectedPickup.id,
         destinationLocationId: selectedDestination.id
-      });
-      onNotice('Ride requested');
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not request ride');
-    }
+      }),
+      new Promise(resolve => setTimeout(resolve, 1200))
+    ]);
+    setRideAnimState('success');
+    onNotice('Ride requested');
+    await load();
+  } catch (err) {
+    setRideAnimState(null);
+    setError(err instanceof Error ? err.message : 'Could not request ride');
   }
+}
 
   async function cancelRide(rideId: number) {
     setError('');
@@ -445,68 +496,71 @@ function PassengerDashboard({
   }
 
   return (
-    <div className="dashboard-grid">
-      <section className="panel span-two">
-        <PanelHeader icon={<MapPin size={20} />} title="Request a ride" subtitle="Choose pickup and destination inside campus" />
-        <form className="request-form" onSubmit={requestRide}>
-          <LocationSelect label="Pickup" locations={locations} value={pickupLocationId} onChange={setPickupLocationId} />
-          <LocationSelect label="Destination" locations={locations} value={destinationLocationId} onChange={setDestinationLocationId} />
-          <button className="primary-button" type="submit" disabled={Boolean(activeRide) || !selectedPickup || !selectedDestination}>
-            Request ride
-          </button>
-        </form>
-        {activeRide && <p className="soft-note">Finish or cancel your active ride before requesting another one.</p>}
-      </section>
+    <>
+      <RideRequestAnimation state={rideAnimState} onDone={() => setRideAnimState(null)} />
+      <div className="dashboard-grid">
+        <section className="panel span-two">
+          <PanelHeader icon={<MapPin size={20} />} title="Request a ride" subtitle="Choose pickup and destination inside campus" />
+          <form className="request-form" onSubmit={requestRide}>
+            <LocationSelect label="Pickup" locations={locations} value={pickupLocationId} onChange={setPickupLocationId} />
+            <LocationSelect label="Destination" locations={locations} value={destinationLocationId} onChange={setDestinationLocationId} />
+            <button className="primary-button" type="submit" disabled={Boolean(activeRide) || !selectedPickup || !selectedDestination}>
+              Request ride
+            </button>
+          </form>
+          {activeRide && <p className="soft-note">Finish or cancel your active ride before requesting another one.</p>}
+        </section>
 
-      <section className="panel span-two">
-        <PanelHeader icon={<LocateFixed size={20} />} title="Campus map" subtitle="Pickup, destination, and assigned driver location" />
-        <RideMap ride={activeRide} pickup={selectedPickup} destination={selectedDestination} />
-      </section>
+        <section className="panel span-two">
+          <PanelHeader icon={<LocateFixed size={20} />} title="Campus map" subtitle="Pickup, destination, and assigned driver location" />
+          <RideMap ride={activeRide} pickup={selectedPickup} destination={selectedDestination} />
+        </section>
 
-      <section className="panel">
-        <PanelHeader icon={<UserRound size={20} />} title="Available drivers" subtitle="Live online driver pool" />
-        <div className="driver-list">
-          {drivers.length === 0 ? (
-            <EmptyState text="No drivers online right now" />
+        <section className="panel">
+          <PanelHeader icon={<UserRound size={20} />} title="Available drivers" subtitle="Live online driver pool" />
+          <div className="driver-list">
+            {drivers.length === 0 ? (
+              <EmptyState text="No drivers online right now" />
+            ) : (
+              drivers.map((driver) => <DriverRow key={driver.id} driver={driver} />)
+            )}
+          </div>
+        </section>
+
+        <ProfilePanel token={token} user={user} onUserRefresh={onUserRefresh} onNotice={onNotice} />
+
+        <section className="panel span-two">
+          <PanelHeader icon={<Clock3 size={20} />} title="Current ride" subtitle="Live ride lifecycle status" />
+          {activeRide ? (
+            <RideCard ride={activeRide} actions={<button className="danger-button" type="button" onClick={() => cancelRide(activeRide.id)}>Cancel ride</button>} />
           ) : (
-            drivers.map((driver) => <DriverRow key={driver.id} driver={driver} />)
+            <EmptyState text="No active ride. Request one when you are ready." />
           )}
-        </div>
-      </section>
+        </section>
 
-      <ProfilePanel token={token} user={user} onUserRefresh={onUserRefresh} onNotice={onNotice} />
-
-      <section className="panel span-two">
-        <PanelHeader icon={<Clock3 size={20} />} title="Current ride" subtitle="Live ride lifecycle status" />
-        {activeRide ? (
-          <RideCard ride={activeRide} actions={<button className="danger-button" type="button" onClick={() => cancelRide(activeRide.id)}>Cancel ride</button>} />
-        ) : (
-          <EmptyState text="No active ride. Request one when you are ready." />
-        )}
-      </section>
-
-      <section className="panel span-two">
-        <PanelHeader icon={<Star size={20} />} title="Ride history and feedback" subtitle="Rate completed rides once" />
-        {loading ? <EmptyState text="Loading rides..." /> : null}
-        {error && <p className="form-error">{error}</p>}
-        <div className="history-list">
-          {rides.length === 0 && !loading ? <EmptyState text="No rides yet" /> : null}
-          {rides.map((ride) => (
-            <div className="history-item" key={ride.id}>
-              <RideCard ride={ride} />
-              {ride.status === 'COMPLETED' && !ride.rating && (
-                <RatingForm rideId={ride.id} onSubmit={submitRating} />
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="mini-stats">
-          <StatCard label="Total rides" value={rides.length} icon={<Activity size={18} />} />
-          <StatCard label="Completed" value={completedRides.length} icon={<CheckCircle2 size={18} />} />
-          <StatCard label="Rated rides" value={completedRides.filter((ride) => ride.rating).length} icon={<Star size={18} />} />
-        </div>
-      </section>
-    </div>
+        <section className="panel span-two">
+          <PanelHeader icon={<Star size={20} />} title="Ride history and feedback" subtitle="Rate completed rides once" />
+          {loading ? <EmptyState text="Loading rides..." /> : null}
+          {error && <p className="form-error">{error}</p>}
+          <div className="history-list">
+            {rides.length === 0 && !loading ? <EmptyState text="No rides yet" /> : null}
+            {rides.map((ride) => (
+              <div className="history-item" key={ride.id}>
+                <RideCard ride={ride} />
+                {ride.status === 'COMPLETED' && !ride.rating && (
+                  <RatingForm rideId={ride.id} onSubmit={submitRating} />
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mini-stats">
+            <StatCard label="Total rides" value={rides.length} icon={<Activity size={18} />} />
+            <StatCard label="Completed" value={completedRides.length} icon={<CheckCircle2 size={18} />} />
+            <StatCard label="Rated rides" value={completedRides.filter((ride) => ride.rating).length} icon={<Star size={18} />} />
+          </div>
+        </section>
+      </div>
+    </>
   );
 }
 

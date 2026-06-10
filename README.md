@@ -51,7 +51,14 @@ Teammates need these installed locally:
 
 - Java 21 JDK
 - Node.js and npm
+
+For local-only setup:
+
 - PostgreSQL server
+
+For team shared-database setup:
+
+- A hosted PostgreSQL database URL, username, and password
 
 Recommended but optional:
 
@@ -65,7 +72,7 @@ cd backend
 ./mvnw spring-boot:run
 ```
 
-pgAdmin is also not required to run the app. It is only a database GUI. The required database dependency is the PostgreSQL server.
+pgAdmin is also not required to run the app. It is only a database GUI. The required database dependency is either a local PostgreSQL server or a shared hosted PostgreSQL database.
 
 ## Database Setup
 
@@ -100,6 +107,66 @@ Tables are created/updated automatically by Spring Boot JPA using:
 ```properties
 spring.jpa.hibernate.ddl-auto=update
 ```
+
+## Shared Database Setup
+
+Use this setup when all teammates should see the same registered users, drivers, rides, ratings, and campus location edits.
+
+Everyone still runs the backend and frontend locally, but every backend connects to the same hosted PostgreSQL database:
+
+```text
+Teammate A backend -> shared hosted PostgreSQL
+Teammate B backend -> shared hosted PostgreSQL
+Teammate C backend -> shared hosted PostgreSQL
+```
+
+Do not commit database passwords or hosted URLs to GitHub. Share them privately with teammates.
+
+The backend reads these values from `backend/.env` if that file exists:
+
+```text
+DATABASE_URL
+DATABASE_USERNAME
+DATABASE_PASSWORD
+```
+
+For a Render PostgreSQL database, use the external connection details for local laptops, not the internal hostname. The JDBC URL should look like:
+
+```text
+jdbc:postgresql://<external-host>:5432/ride_management_db?sslmode=require
+```
+
+Create the local env file once:
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+Then edit `backend/.env`:
+
+```properties
+DATABASE_URL=jdbc:postgresql://<external-host>:5432/ride_management_db?sslmode=require
+DATABASE_USERNAME=ride_user
+DATABASE_PASSWORD=<shared-database-password>
+JWT_SECRET=<shared-jwt-secret>
+```
+
+After that, start the backend normally:
+
+Mac/Linux:
+
+```bash
+./mvnw spring-boot:run
+```
+
+Windows:
+
+```bat
+mvnw.cmd spring-boot:run
+```
+
+`backend/.env` is ignored by Git, so do not commit it. Share the real values privately with teammates. When these values are set, the backend ignores the local database defaults and uses the shared database. If the shared database is empty, Spring Boot creates the tables automatically on startup.
 
 ## pgAdmin Setup
 

@@ -43,6 +43,11 @@ frontend/.env
 frontend/.env.*
 frontend/*.tsbuildinfo
 
+### Backend local secrets ###
+backend/.env
+backend/.env.*
+!backend/.env.example
+
 ### Logs ###
 *.log
 npm-debug.log*

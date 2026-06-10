@@ -25,6 +25,7 @@ import type {
   AuthResponse,
   AvailabilityStatus,
   CampusLocation,
+  DriverLocation,
   DriverDashboard as DriverDashboardData,
   DriverSummary,
   RealtimeEvent,
@@ -63,7 +64,7 @@ type RideAnimationState = 'requesting' | 'success' | null;
 function RideRequestAnimation({ state, onDone }: { state: RideAnimationState; onDone: () => void }) {
   useEffect(() => {
     if (state === 'success') {
-      const timer = setTimeout(onDone, 2600);
+      const timer = setTimeout(onDone, 1400);
       return () => clearTimeout(timer);
     }
   }, [state, onDone]);
@@ -105,6 +106,7 @@ export default function App() {
   const [session, setSession] = useState<AuthResponse | null>(() => sessionStore.read());
   const [notice, setNotice] = useState('Ready for campus rides');
   const [realtimeTick, setRealtimeTick] = useState(0);
+  const [realtimeEvent, setRealtimeEvent] = useState<RealtimeEvent | null>(null);
   const authVersionRef = useRef(0);
 
   const saveSession = useCallback((nextSession: AuthResponse) => {
@@ -144,10 +146,14 @@ export default function App() {
           try {
             const event = JSON.parse(raw.body) as RealtimeEvent;
             setNotice(event.message);
+            setRealtimeEvent(event);
+            if (event.type !== 'DRIVER_LOCATION_UPDATED') {
+              setRealtimeTick((value) => value + 1);
+            }
           } catch {
             setNotice('Live update received');
+            setRealtimeTick((value) => value + 1);
           }
-          setRealtimeTick((value) => value + 1);
         };
 
         client.subscribe(`/topic/users/${session.user.id}/notifications`, handleMessage);
@@ -217,6 +223,7 @@ export default function App() {
             token={session.token}
             user={session.user}
             realtimeTick={realtimeTick}
+            realtimeEvent={realtimeEvent}
             onUserRefresh={refreshUser}
             onNotice={setNotice}
           />
@@ -225,6 +232,7 @@ export default function App() {
             token={session.token}
             user={session.user}
             realtimeTick={realtimeTick}
+            realtimeEvent={realtimeEvent}
             onUserRefresh={refreshUser}
             onNotice={setNotice}
           />
@@ -395,12 +403,14 @@ function PassengerDashboard({
   token,
   user,
   realtimeTick,
+  realtimeEvent,
   onUserRefresh,
   onNotice
 }: {
   token: string;
   user: User;
   realtimeTick: number;
+  realtimeEvent: RealtimeEvent | null;
   onUserRefresh: () => Promise<void>;
   onNotice: (notice: string) => void;
 }) {
@@ -416,22 +426,53 @@ function PassengerDashboard({
   const load = useCallback(async () => {
     setError('');
     try {
-      const [availableDrivers, myRides, campusLocations] = await Promise.all([
+      const [availableDrivers, myRides] = await Promise.all([
         api.availableDrivers(token),
-        api.myRides(token),
-        api.campusLocations(token)
+        api.myRides(token)
       ]);
       setDrivers(availableDrivers);
       setRides(myRides);
-      setLocations(campusLocations);
-      setPickupLocationId((current) => validLocationId(current, campusLocations) ?? campusLocations[0]?.id ?? null);
-      setDestinationLocationId((current) => validLocationId(current, campusLocations) ?? campusLocations[1]?.id ?? campusLocations[0]?.id ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load passenger dashboard');
     } finally {
       setLoading(false);
     }
   }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLocations() {
+      try {
+        const campusLocations = await api.campusLocations(token);
+        if (cancelled) return;
+        setLocations(campusLocations);
+        setPickupLocationId((current) => validLocationId(current, campusLocations) ?? campusLocations[0]?.id ?? null);
+        setDestinationLocationId((current) => validLocationId(current, campusLocations) ?? campusLocations[1]?.id ?? campusLocations[0]?.id ?? null);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Could not load campus locations');
+        }
+      }
+    }
+
+    void loadLocations();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!realtimeEvent || realtimeEvent.type !== 'DRIVER_LOCATION_UPDATED') return;
+    const payload = realtimeEvent.payload;
+    if (isRidePayload(payload)) {
+      setRides((current) => upsertRide(current, payload));
+      return;
+    }
+    if (isDriverLocationPayload(payload)) {
+      setRides((current) => updateRideDriverLocation(current, payload));
+    }
+  }, [realtimeEvent]);
 
   useEffect(() => {
     void load();
@@ -443,35 +484,33 @@ function PassengerDashboard({
   const completedRides = rides.filter((ride) => ride.status === 'COMPLETED');
 
   async function requestRide(event: React.FormEvent) {
-  event.preventDefault();
-  setError('');
-  if (!selectedPickup || !selectedDestination) {
-    setError('Select pickup and destination');
-    return;
-  }
-  if (selectedPickup.id === selectedDestination.id) {
-    setError('Pickup and destination must be different');
-    return;
-  }
-  setRideAnimState('requesting');
-  try {
-    await Promise.all([
-      api.createRide(token, {
+    event.preventDefault();
+    setError('');
+    if (!selectedPickup || !selectedDestination) {
+      setError('Select pickup and destination');
+      return;
+    }
+    if (selectedPickup.id === selectedDestination.id) {
+      setError('Pickup and destination must be different');
+      return;
+    }
+    setRideAnimState('requesting');
+    try {
+      const ride = await api.createRide(token, {
         pickupLocation: selectedPickup.name,
         destination: selectedDestination.name,
         pickupLocationId: selectedPickup.id,
         destinationLocationId: selectedDestination.id
-      }),
-      new Promise(resolve => setTimeout(resolve, 1200))
-    ]);
-    setRideAnimState('success');
-    onNotice('Ride requested');
-    await load();
-  } catch (err) {
-    setRideAnimState(null);
-    setError(err instanceof Error ? err.message : 'Could not request ride');
+      });
+      setRides((current) => upsertRide(current, ride));
+      setRideAnimState('success');
+      onNotice('Ride requested');
+      void load();
+    } catch (err) {
+      setRideAnimState(null);
+      setError(err instanceof Error ? err.message : 'Could not request ride');
+    }
   }
-}
 
   async function cancelRide(rideId: number) {
     setError('');
@@ -568,12 +607,14 @@ function DriverDashboard({
   token,
   user,
   realtimeTick,
+  realtimeEvent,
   onUserRefresh,
   onNotice
 }: {
   token: string;
   user: User;
   realtimeTick: number;
+  realtimeEvent: RealtimeEvent | null;
   onUserRefresh: () => Promise<void>;
   onNotice: (notice: string) => void;
 }) {
@@ -590,15 +631,26 @@ function DriverDashboard({
       const [dashboardData, requests] = await Promise.all([api.driverDashboard(token), api.incomingRequests(token)]);
       setDashboard(dashboardData);
       setIncoming(requests);
-      await onUserRefresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load driver dashboard');
     }
-  }, [token, onUserRefresh]);
+  }, [token]);
 
   useEffect(() => {
     void load();
   }, [load, realtimeTick]);
+
+  useEffect(() => {
+    if (!realtimeEvent || realtimeEvent.type !== 'DRIVER_LOCATION_UPDATED') return;
+    const payload = realtimeEvent.payload;
+    if (isRidePayload(payload)) {
+      setDashboard((current) => updateDriverDashboardRide(current, payload));
+      return;
+    }
+    if (isDriverLocationPayload(payload)) {
+      setDashboard((current) => updateDriverDashboardLocation(current, payload));
+    }
+  }, [realtimeEvent]);
 
   async function runAction(action: () => Promise<unknown>, success: string) {
     setBusy(true);
@@ -606,7 +658,7 @@ function DriverDashboard({
     try {
       await action();
       onNotice(success);
-      await load();
+      await Promise.all([load(), onUserRefresh()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Action failed');
     } finally {
@@ -1177,6 +1229,63 @@ function validLocationId(current: number | null, locations: CampusLocation[]) {
     return null;
   }
   return locations.some((location) => location.id === current) ? current : null;
+}
+
+function upsertRide(rides: Ride[], ride: Ride) {
+  return rides.some((current) => current.id === ride.id)
+    ? rides.map((current) => (current.id === ride.id ? ride : current))
+    : [ride, ...rides];
+}
+
+function updateRideDriverLocation(rides: Ride[], location: DriverLocation) {
+  return rides.map((ride) => {
+    if (ride.driver?.id !== location.driverId || !activeStatuses.includes(ride.status)) {
+      return ride;
+    }
+    return { ...ride, driverLocation: location };
+  });
+}
+
+function updateDriverDashboardRide(dashboard: DriverDashboardData | null, ride: Ride) {
+  if (!dashboard) return dashboard;
+  return {
+    ...dashboard,
+    activeRide: dashboard.activeRide?.id === ride.id ? ride : dashboard.activeRide,
+    rideHistory: dashboard.rideHistory.some((current) => current.id === ride.id)
+      ? dashboard.rideHistory.map((current) => (current.id === ride.id ? ride : current))
+      : dashboard.rideHistory
+  };
+}
+
+function updateDriverDashboardLocation(dashboard: DriverDashboardData | null, location: DriverLocation) {
+  if (!dashboard?.activeRide || dashboard.activeRide.driver?.id !== location.driverId) {
+    return dashboard;
+  }
+  const activeRide = { ...dashboard.activeRide, driverLocation: location };
+  return {
+    ...dashboard,
+    activeRide,
+    rideHistory: dashboard.rideHistory.map((ride) => (ride.id === activeRide.id ? activeRide : ride))
+  };
+}
+
+function isRidePayload(payload: unknown): payload is Ride {
+  return isRecord(payload)
+    && typeof payload.id === 'number'
+    && typeof payload.pickupLocation === 'string'
+    && typeof payload.destination === 'string'
+    && typeof payload.status === 'string';
+}
+
+function isDriverLocationPayload(payload: unknown): payload is DriverLocation {
+  return isRecord(payload)
+    && typeof payload.driverId === 'number'
+    && typeof payload.latitude === 'number'
+    && typeof payload.longitude === 'number';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function mapIcon(label: string, tone: 'pickup' | 'destination' | 'driver') {

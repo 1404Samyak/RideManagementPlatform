@@ -197,6 +197,9 @@ public class ResponseMapper {
     }
 
     private ResolvedMapPoint resolveMapPoint(String locationName, Double fallbackLatitude, Double fallbackLongitude) {
+        if (fallbackLatitude != null && fallbackLongitude != null) {
+            return new ResolvedMapPoint(fallbackLatitude, fallbackLongitude);
+        }
         if (locationName != null) {
             return campusLocationRepository.findByNameIgnoreCase(locationName)
                     .map(location -> new ResolvedMapPoint(location.getLatitude(), location.getLongitude()))

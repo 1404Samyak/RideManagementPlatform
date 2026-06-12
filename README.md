@@ -376,7 +376,7 @@ deliverables/
 Demo video link placeholder:
 
 ```text
-https://www.youtube.com/watch?v=YOUR_DEMO_VIDEO_ID
+https://youtu.be/O9JQJh4i4AE
 ```
 
 Replace the placeholder with the final YouTube demo link before submission. The same placeholder is also available in:

@@ -3,6 +3,7 @@ package com.iitr.ride_management_backend.repository;
 import com.iitr.ride_management_backend.domain.Ride;
 import com.iitr.ride_management_backend.domain.RideStatus;
 import jakarta.persistence.LockModeType;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -22,6 +23,51 @@ public interface RideRepository extends JpaRepository<Ride, Long> {
     List<Ride> findByDriverIdOrderByRequestedAtDesc(Long driverId);
 
     List<Ride> findByDriverIdAndStatusInOrderByRequestedAtDesc(Long driverId, Collection<RideStatus> statuses);
+
+    @Query("""
+            select r from Ride r
+            where r.driver.id = :driverId
+              and (
+                r.status = com.iitr.ride_management_backend.domain.RideStatus.IN_PROGRESS
+                or (
+                  r.status = com.iitr.ride_management_backend.domain.RideStatus.ACCEPTED
+                  and (r.scheduledFor is null or r.scheduledFor <= :now)
+                )
+              )
+            order by r.requestedAt desc
+            """)
+    List<Ride> findBlockingRidesForDriver(@Param("driverId") Long driverId, @Param("now") Instant now);
+
+    @Query("""
+            select count(r) from Ride r
+            where r.driver.id = :driverId
+              and (
+                r.status = com.iitr.ride_management_backend.domain.RideStatus.IN_PROGRESS
+                or (
+                  r.status = com.iitr.ride_management_backend.domain.RideStatus.ACCEPTED
+                  and (r.scheduledFor is null or r.scheduledFor <= :now)
+                )
+              )
+            """)
+    long countBlockingRidesForDriver(@Param("driverId") Long driverId, @Param("now") Instant now);
+
+    @Query("""
+            select count(r) from Ride r
+            where r.driver.id = :driverId
+              and r.id <> :rideId
+              and (
+                r.status = com.iitr.ride_management_backend.domain.RideStatus.IN_PROGRESS
+                or (
+                  r.status = com.iitr.ride_management_backend.domain.RideStatus.ACCEPTED
+                  and (r.scheduledFor is null or r.scheduledFor <= :now)
+                )
+              )
+            """)
+    long countOtherBlockingRidesForDriver(
+            @Param("driverId") Long driverId,
+            @Param("rideId") Long rideId,
+            @Param("now") Instant now
+    );
 
     long countByDriverIdAndStatus(Long driverId, RideStatus status);
 

@@ -26,8 +26,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class DriverService {
 
-    private static final List<RideStatus> ACTIVE_RIDE_STATUSES = List.of(RideStatus.ACCEPTED, RideStatus.IN_PROGRESS);
-
     private final DriverProfileRepository driverProfileRepository;
     private final RideRepository rideRepository;
     private final RatingRepository ratingRepository;
@@ -96,7 +94,7 @@ public class DriverService {
         DriverLocationResponse location = mapper.driverLocation(savedProfile);
         realtimeService.driverLocationChanged(location);
 
-        rideRepository.findByDriverIdAndStatusInOrderByRequestedAtDesc(user.getId(), ACTIVE_RIDE_STATUSES)
+        rideRepository.findBlockingRidesForDriver(user.getId(), Instant.now())
                 .stream()
                 .findFirst()
                 .ifPresent(ride -> realtimeService.driverLocationChangedForRide(mapper.rideResponse(ride), location));
@@ -112,10 +110,11 @@ public class DriverService {
                 .toList();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public DriverDashboardResponse dashboard(User user) {
         DriverProfile profile = requireDriverProfile(user);
         Long driverId = user.getId();
+        Instant now = Instant.now();
         List<RideResponse> history = rideRepository.findByDriverIdOrderByRequestedAtDesc(driverId)
                 .stream()
                 .map(mapper::rideResponse)
@@ -124,14 +123,16 @@ public class DriverService {
                 .stream()
                 .map(mapper::ratingResponse)
                 .toList();
-        RideResponse activeRide = rideRepository.findByDriverIdAndStatusInOrderByRequestedAtDesc(driverId, ACTIVE_RIDE_STATUSES)
+        RideResponse activeRide = rideRepository.findBlockingRidesForDriver(driverId, now)
                 .stream()
                 .findFirst()
                 .map(mapper::rideResponse)
                 .orElse(null);
+        long blockingRideCount = rideRepository.countBlockingRidesForDriver(driverId, now);
+        syncAvailabilityWithBlockingRides(profile, blockingRideCount);
         return new DriverDashboardResponse(
                 rideRepository.countByDriverIdAndStatus(driverId, RideStatus.COMPLETED),
-                rideRepository.countByDriverIdAndStatusIn(driverId, ACTIVE_RIDE_STATUSES),
+                blockingRideCount,
                 profile.getAverageRating(),
                 profile.getRatingCount(),
                 activeRide,
@@ -164,6 +165,19 @@ public class DriverService {
     }
 
     public boolean hasActiveRide(Long driverId) {
-        return rideRepository.countByDriverIdAndStatusIn(driverId, ACTIVE_RIDE_STATUSES) > 0;
+        return rideRepository.countBlockingRidesForDriver(driverId, Instant.now()) > 0;
+    }
+
+    private void syncAvailabilityWithBlockingRides(DriverProfile profile, long blockingRideCount) {
+        if (profile.getAvailabilityStatus() == AvailabilityStatus.OFFLINE) {
+            return;
+        }
+        AvailabilityStatus expectedStatus = blockingRideCount > 0 ? AvailabilityStatus.BUSY : AvailabilityStatus.ONLINE;
+        if (profile.getAvailabilityStatus() == expectedStatus) {
+            return;
+        }
+        profile.setAvailabilityStatus(expectedStatus);
+        DriverProfile savedProfile = driverProfileRepository.save(profile);
+        realtimeService.driverAvailabilityChanged(mapper.driverSummary(savedProfile));
     }
 }

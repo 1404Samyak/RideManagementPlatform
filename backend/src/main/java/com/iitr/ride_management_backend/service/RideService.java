@@ -116,6 +116,9 @@ public class RideService {
         if (profile.getAvailabilityStatus() != AvailabilityStatus.ONLINE) {
             throw new BadRequestException("Driver must be online to accept a ride");
         }
+        if (driverService.hasActiveRide(user.getId())) {
+            throw new BadRequestException("Complete or cancel the active ride before accepting another ride");
+        }
         Ride ride = rideRepository.findByIdForUpdate(rideId)
                 .orElseThrow(() -> new NotFoundException("Ride not found"));
         if (ride.getStatus() != RideStatus.REQUESTED || ride.getDriver() != null) {
@@ -125,7 +128,7 @@ public class RideService {
         ride.setDriver(user);
         ride.setStatus(RideStatus.ACCEPTED);
         ride.setAcceptedAt(Instant.now());
-        profile.setAvailabilityStatus(AvailabilityStatus.BUSY);
+        profile.setAvailabilityStatus(blocksDriverNow(ride) ? AvailabilityStatus.BUSY : AvailabilityStatus.ONLINE);
 
         driverProfileRepository.save(profile);
         RideResponse response = mapper.rideResponse(rideRepository.save(ride));
@@ -160,9 +163,19 @@ public class RideService {
         if (ride.getScheduledFor() != null && Instant.now().isBefore(ride.getScheduledFor())) {
             throw new BadRequestException("Scheduled ride can be started at or after " + ride.getScheduledFor());
         }
+        if (rideRepository.countOtherBlockingRidesForDriver(user.getId(), ride.getId(), Instant.now()) > 0) {
+            throw new BadRequestException("Complete or cancel the active ride before starting this scheduled ride");
+        }
         ride.setStatus(RideStatus.IN_PROGRESS);
         ride.setStartedAt(Instant.now());
+
+        DriverProfile profile = driverProfileRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new NotFoundException("Driver profile not found"));
+        profile.setAvailabilityStatus(AvailabilityStatus.BUSY);
+        driverProfileRepository.save(profile);
+
         RideResponse response = mapper.rideResponse(rideRepository.save(ride));
+        realtimeService.driverAvailabilityChanged(mapper.driverSummary(profile));
         realtimeService.rideChanged("RIDE_STARTED", "Ride started", response);
         return response;
     }
@@ -179,7 +192,7 @@ public class RideService {
 
         DriverProfile profile = driverProfileRepository.findByUserId(user.getId())
                 .orElseThrow(() -> new NotFoundException("Driver profile not found"));
-        profile.setAvailabilityStatus(AvailabilityStatus.ONLINE);
+        profile.setAvailabilityStatus(driverService.hasActiveRide(user.getId()) ? AvailabilityStatus.BUSY : AvailabilityStatus.ONLINE);
         driverProfileRepository.save(profile);
 
         RideResponse response = mapper.rideResponse(rideRepository.save(ride));
@@ -211,7 +224,7 @@ public class RideService {
         if (driverId != null) {
             profile = driverProfileRepository.findByUserId(driverId)
                     .orElseThrow(() -> new NotFoundException("Driver profile not found"));
-            profile.setAvailabilityStatus(AvailabilityStatus.ONLINE);
+            profile.setAvailabilityStatus(driverService.hasActiveRide(driverId) ? AvailabilityStatus.BUSY : AvailabilityStatus.ONLINE);
             driverProfileRepository.save(profile);
         }
 
@@ -250,6 +263,12 @@ public class RideService {
         if (user.getRole() != Role.DRIVER || ride.getDriver() == null || !ride.getDriver().getId().equals(user.getId())) {
             throw new ForbiddenException("Assigned driver access required");
         }
+    }
+
+    private boolean blocksDriverNow(Ride ride) {
+        return ride.getStatus() == RideStatus.IN_PROGRESS
+                || (ride.getStatus() == RideStatus.ACCEPTED
+                && (ride.getScheduledFor() == null || !Instant.now().isBefore(ride.getScheduledFor())));
     }
 
     private void ensureRideParticipantOrRequestedDriver(User user, Ride ride) {

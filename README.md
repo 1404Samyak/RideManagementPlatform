@@ -190,7 +190,7 @@ WHERE name = 'Central Library';
 
 ## Running The Application
 
-Run the backend and frontend in two separate terminals.
+Run the Backend and Frontend in two separate terminals.
 
 ### Terminal 1: Start Backend
 

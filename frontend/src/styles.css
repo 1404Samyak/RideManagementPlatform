@@ -217,6 +217,14 @@ select {
   outline: none;
 }
 
+input[type='checkbox'] {
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--teal);
+  box-shadow: none;
+  padding: 0;
+}
+
 input:focus,
 select:focus {
   border-color: var(--teal);
@@ -267,6 +275,42 @@ select:focus {
   border-radius: 8px;
   font-weight: 700;
   line-height: 1.35;
+}
+
+.popup-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  max-width: min(420px, calc(100vw - 32px));
+  min-height: 48px;
+  padding: 12px 14px;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--teal-dark);
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+}
+
+.popup-notification span {
+  flex: 1;
+  min-width: 0;
+}
+
+.popup-notification button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--mint);
+  color: var(--teal-dark);
+  display: grid;
+  place-items: center;
+  padding: 0;
 }
 
 .sidebar-action {
@@ -353,9 +397,26 @@ select:focus {
 
 .request-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   align-items: end;
+}
+
+.request-form .primary-button {
+  align-self: end;
+}
+
+.schedule-toggle {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #ffffff;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink) !important;
+  font-weight: 800 !important;
 }
 
 .primary-button,
@@ -517,6 +578,11 @@ button:disabled {
 .ride-event-note.rejected {
   color: var(--coral);
   background: var(--coral-soft);
+}
+
+.ride-event-note.scheduled {
+  color: var(--amber);
+  background: var(--amber-soft);
 }
 
 .status-pill {

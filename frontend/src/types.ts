@@ -96,6 +96,7 @@ export interface Ride {
   destinationLongitude?: number | null;
   status: RideStatus;
   requestedAt: string;
+  scheduledFor?: string | null;
   acceptedAt?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;

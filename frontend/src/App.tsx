@@ -102,9 +102,30 @@ function RideRequestAnimation({ state, onDone }: { state: RideAnimationState; on
   );
 }
 
+function PopupNotification({ message, onClose }: { message: string | null; onClose: () => void }) {
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(onClose, 4200);
+    return () => clearTimeout(timer);
+  }, [message, onClose]);
+
+  if (!message) return null;
+
+  return (
+    <div className="popup-notification" role="status" aria-live="polite">
+      <CheckCircle2 size={18} />
+      <span>{message}</span>
+      <button type="button" onClick={onClose} aria-label="Dismiss notification">
+        <XCircle size={16} />
+      </button>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState<AuthResponse | null>(() => sessionStore.read());
   const [notice, setNotice] = useState('Ready for campus rides');
+  const [popupNotice, setPopupNotice] = useState<string | null>(null);
   const [realtimeTick, setRealtimeTick] = useState(0);
   const [realtimeEvent, setRealtimeEvent] = useState<RealtimeEvent | null>(null);
   const authVersionRef = useRef(0);
@@ -134,6 +155,10 @@ export default function App() {
     setSession(null);
   }, []);
 
+  const closePopupNotice = useCallback(() => {
+    setPopupNotice(null);
+  }, []);
+
   useEffect(() => {
     if (!session) return;
 
@@ -147,6 +172,14 @@ export default function App() {
             const event = JSON.parse(raw.body) as RealtimeEvent;
             setNotice(event.message);
             setRealtimeEvent(event);
+            if (
+              event.type === 'RIDE_ACCEPTED'
+              && isRidePayload(event.payload)
+              && event.payload.passenger.id === session.user.id
+              && event.payload.driver
+            ) {
+              setPopupNotice(`Your ride is accepted by ${event.payload.driver.name}`);
+            }
             if (event.type !== 'DRIVER_LOCATION_UPDATED') {
               setRealtimeTick((value) => value + 1);
             }
@@ -177,6 +210,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      <PopupNotification message={popupNotice} onClose={closePopupNotice} />
       <aside className="sidebar">
         <div className="brand-block">
           <div className="brand-mark">
@@ -422,6 +456,9 @@ function PassengerDashboard({
   const [pickupLocationId, setPickupLocationId] = useState<number | null>(null);
   const [destinationLocationId, setDestinationLocationId] = useState<number | null>(null);
   const [rideAnimState, setRideAnimState] = useState<RideAnimationState>(null);
+  const [scheduleMode, setScheduleMode] = useState(false);
+  const [scheduledDateTime, setScheduledDateTime] = useState(() => toDateTimeLocalValue(new Date(Date.now() + 15 * 60_000)));
+  const minScheduleDateTime = useMemo(() => toDateTimeLocalValue(new Date(Date.now() + 60_000)), []);
 
   const load = useCallback(async () => {
     setError('');
@@ -482,6 +519,7 @@ function PassengerDashboard({
   const selectedPickup = useMemo(() => locations.find((location) => location.id === pickupLocationId) ?? null, [locations, pickupLocationId]);
   const selectedDestination = useMemo(() => locations.find((location) => location.id === destinationLocationId) ?? null, [locations, destinationLocationId]);
   const completedRides = rides.filter((ride) => ride.status === 'COMPLETED');
+  const upcomingRides = rides.filter((ride) => ride.scheduledFor && activeStatuses.includes(ride.status));
 
   async function requestRide(event: React.FormEvent) {
     event.preventDefault();
@@ -494,17 +532,27 @@ function PassengerDashboard({
       setError('Pickup and destination must be different');
       return;
     }
+    let scheduledFor: string | undefined;
+    if (scheduleMode) {
+      const scheduledDate = new Date(scheduledDateTime);
+      if (!scheduledDateTime || !Number.isFinite(scheduledDate.getTime()) || scheduledDate.getTime() <= Date.now()) {
+        setError('Scheduled pickup time must be in the future');
+        return;
+      }
+      scheduledFor = scheduledDate.toISOString();
+    }
     setRideAnimState('requesting');
     try {
       const ride = await api.createRide(token, {
         pickupLocation: selectedPickup.name,
         destination: selectedDestination.name,
         pickupLocationId: selectedPickup.id,
-        destinationLocationId: selectedDestination.id
+        destinationLocationId: selectedDestination.id,
+        scheduledFor
       });
       setRides((current) => upsertRide(current, ride));
       setRideAnimState('success');
-      onNotice('Ride requested');
+      onNotice(scheduleMode ? 'Ride scheduled' : 'Ride requested');
       void load();
     } catch (err) {
       setRideAnimState(null);
@@ -543,8 +591,28 @@ function PassengerDashboard({
           <form className="request-form" onSubmit={requestRide}>
             <LocationSelect label="Pickup" locations={locations} value={pickupLocationId} onChange={setPickupLocationId} />
             <LocationSelect label="Destination" locations={locations} value={destinationLocationId} onChange={setDestinationLocationId} />
+            <label className="schedule-toggle">
+              <input
+                type="checkbox"
+                checked={scheduleMode}
+                onChange={(event) => setScheduleMode(event.target.checked)}
+              />
+              <span>Schedule for later</span>
+            </label>
+            {scheduleMode && (
+              <label>
+                Pickup time
+                <input
+                  type="datetime-local"
+                  value={scheduledDateTime}
+                  min={minScheduleDateTime}
+                  onChange={(event) => setScheduledDateTime(event.target.value)}
+                  required
+                />
+              </label>
+            )}
             <button className="primary-button" type="submit" disabled={Boolean(activeRide) || !selectedPickup || !selectedDestination}>
-              Request ride
+              {scheduleMode ? 'Schedule ride' : 'Request ride'}
             </button>
           </form>
           {activeRide && <p className="soft-note">Finish or cancel your active ride before requesting another one.</p>}
@@ -574,6 +642,21 @@ function PassengerDashboard({
             <RideCard ride={activeRide} actions={<button className="danger-button" type="button" onClick={() => cancelRide(activeRide.id)}>Cancel ride</button>} />
           ) : (
             <EmptyState text="No active ride. Request one when you are ready." />
+          )}
+        </section>
+
+        <section className="panel span-two">
+          <PanelHeader icon={<CalendarClock size={20} />} title="Upcoming bookings" subtitle="Future rides accepted or waiting for a driver" />
+          {upcomingRides.length === 0 ? (
+            <EmptyState text="No upcoming scheduled rides" />
+          ) : (
+            <div className="history-list">
+              {upcomingRides.map((ride) => (
+                <div className="history-item" key={`upcoming-${ride.id}`}>
+                  <RideCard ride={ride} actions={<button className="danger-button" type="button" onClick={() => cancelRide(ride.id)}>Cancel booking</button>} />
+                </div>
+              ))}
+            </div>
           )}
         </section>
 
@@ -623,6 +706,7 @@ function DriverDashboard({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [gpsStatus, setGpsStatus] = useState('GPS idle');
+  const [driverClock, setDriverClock] = useState(Date.now());
   const lastSentLocationRef = useRef<{ latitude: number; longitude: number; sentAt: number } | null>(null);
 
   const load = useCallback(async () => {
@@ -651,6 +735,12 @@ function DriverDashboard({
       setDashboard((current) => updateDriverDashboardLocation(current, payload));
     }
   }, [realtimeEvent]);
+
+  useEffect(() => {
+    if (!dashboard?.activeRide?.scheduledFor || dashboard.activeRide.status !== 'ACCEPTED') return;
+    const timer = window.setInterval(() => setDriverClock(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [dashboard?.activeRide?.scheduledFor, dashboard?.activeRide?.status]);
 
   async function runAction(action: () => Promise<unknown>, success: string) {
     setBusy(true);
@@ -732,6 +822,8 @@ function DriverDashboard({
     status: statusMeta[item.status].label,
     count: item.count
   })) ?? [];
+  const activeRide = dashboard?.activeRide ?? null;
+  const startBlockedBySchedule = Boolean(activeRide && activeRide.status === 'ACCEPTED' && isScheduledInFuture(activeRide, driverClock));
 
   return (
     <div className="dashboard-grid">
@@ -750,7 +842,7 @@ function DriverDashboard({
               )
             }
           >
-            {availability === 'OFFLINE' ? 'Go online' : availability === 'BUSY' ? 'Ride in progress' : 'Go offline'}
+            {availability === 'OFFLINE' ? 'Go online' : availability === 'BUSY' ? 'Ride assigned' : 'Go offline'}
           </button>
           {user.driver?.vehicle && (
             <span className="vehicle-chip">
@@ -767,7 +859,7 @@ function DriverDashboard({
       <ProfilePanel token={token} user={user} onUserRefresh={onUserRefresh} onNotice={onNotice} />
 
       <section className="panel">
-        <PanelHeader icon={<Bell size={20} />} title="Incoming requests" subtitle="First accepted driver gets the ride" />
+        <PanelHeader icon={<Bell size={20} />} title="Incoming requests" subtitle="Immediate and scheduled requests" />
         {error && <p className="form-error">{error}</p>}
         <div className="request-list">
           {incoming.length === 0 ? (
@@ -797,28 +889,33 @@ function DriverDashboard({
 
       <section className="panel span-two">
         <PanelHeader icon={<Navigation size={20} />} title="Active ride" subtitle="Move the ride through its lifecycle" />
-        {dashboard?.activeRide ? (
-          <RideCard
-            ride={dashboard.activeRide}
-            showMap
-            actions={
-              <div className="action-row">
-                {dashboard.activeRide.status === 'ACCEPTED' && (
-                  <button className="primary-button" type="button" disabled={busy} onClick={() => runAction(() => api.startRide(token, dashboard.activeRide!.id), 'Ride started')}>
-                    Start ride
+        {activeRide ? (
+          <>
+            <RideCard
+              ride={activeRide}
+              showMap
+              actions={
+                <div className="action-row">
+                  {activeRide.status === 'ACCEPTED' && (
+                    <button className="primary-button" type="button" disabled={busy || startBlockedBySchedule} onClick={() => runAction(() => api.startRide(token, activeRide.id), 'Ride started')}>
+                      Start ride
+                    </button>
+                  )}
+                  {activeRide.status === 'IN_PROGRESS' && (
+                    <button className="primary-button" type="button" disabled={busy} onClick={() => runAction(() => api.completeRide(token, activeRide.id), 'Ride completed')}>
+                      Complete
+                    </button>
+                  )}
+                  <button className="danger-button" type="button" disabled={busy} onClick={() => runAction(() => api.cancelRide(token, activeRide.id), 'Ride cancelled')}>
+                    Cancel
                   </button>
-                )}
-                {dashboard.activeRide.status === 'IN_PROGRESS' && (
-                  <button className="primary-button" type="button" disabled={busy} onClick={() => runAction(() => api.completeRide(token, dashboard.activeRide!.id), 'Ride completed')}>
-                    Complete
-                  </button>
-                )}
-                <button className="danger-button" type="button" disabled={busy} onClick={() => runAction(() => api.cancelRide(token, dashboard.activeRide!.id), 'Ride cancelled')}>
-                  Cancel
-                </button>
-              </div>
-            }
-          />
+                </div>
+              }
+            />
+            {startBlockedBySchedule && activeRide.scheduledFor && (
+              <p className="soft-note">This scheduled ride can start at {formatTime(activeRide.scheduledFor)}.</p>
+            )}
+          </>
         ) : (
           <EmptyState text="No active ride assigned" />
         )}
@@ -994,10 +1091,17 @@ function RideCard({
           <span>{rideNotice.text}</span>
         </div>
       )}
+      {ride.scheduledFor && (
+        <div className="ride-event-note scheduled">
+          <CalendarClock size={16} />
+          <span>Scheduled for {formatTime(ride.scheduledFor)}</span>
+        </div>
+      )}
       <div className="ride-meta-grid">
         <span><MapPin size={15} /> Pickup: {ride.pickupLocation}</span>
         <span><Navigation size={15} /> Destination: {ride.destination}</span>
         <span><Clock3 size={15} /> Requested: {formatTime(ride.requestedAt)}</span>
+        {ride.scheduledFor && <span><CalendarClock size={15} /> Pickup time: {formatTime(ride.scheduledFor)}</span>}
         <span><UserRound size={15} /> Passenger: {ride.passenger.name}</span>
         {ride.driver && <span><ShieldCheck size={15} /> Driver: {ride.driver.name}</span>}
         {ride.latestRejectedBy && !ride.driver && <span><XCircle size={15} /> Latest rejection: {formatTime(ride.latestRejectedAt)}</span>}
@@ -1321,6 +1425,15 @@ function geolocationErrorMessage(error: GeolocationPositionError) {
   if (error.code === error.POSITION_UNAVAILABLE) return 'GPS unavailable';
   if (error.code === error.TIMEOUT) return 'GPS timeout';
   return 'GPS error';
+}
+
+function isScheduledInFuture(ride: Ride, now = Date.now()) {
+  return Boolean(ride.scheduledFor && new Date(ride.scheduledFor).getTime() > now);
+}
+
+function toDateTimeLocalValue(date: Date) {
+  const pad = (value: number) => value.toString().padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function formatTime(value?: string | null) {

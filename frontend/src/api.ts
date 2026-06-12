@@ -130,6 +130,7 @@ export const api = {
     destination: string;
     pickupLocationId?: number;
     destinationLocationId?: number;
+    scheduledFor?: string | null;
   }) {
     return request<Ride>('/rides', token, {
       method: 'POST',

@@ -3,5 +3,5 @@
 Add the YouTube demo video link here before submission.
 
 ```text
-https://www.youtube.com/watch?v=YOUR_DEMO_VIDEO_ID
+https://youtu.be/O9JQJh4i4AE
 ```

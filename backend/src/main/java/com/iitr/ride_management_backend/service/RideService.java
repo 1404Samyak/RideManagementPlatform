@@ -17,6 +17,7 @@ import com.iitr.ride_management_backend.repository.CampusLocationRepository;
 import com.iitr.ride_management_backend.repository.DriverProfileRepository;
 import com.iitr.ride_management_backend.repository.RideRejectionRepository;
 import com.iitr.ride_management_backend.repository.RideRepository;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -25,11 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class RideService {
 
-    private static final List<RideStatus> PASSENGER_ACTIVE_STATUSES = List.of(
-            RideStatus.REQUESTED,
-            RideStatus.ACCEPTED,
-            RideStatus.IN_PROGRESS
-    );
+    private static final Duration SCHEDULED_RIDE_SLOT = Duration.ofMinutes(30);
 
     private final RideRepository rideRepository;
     private final RideRejectionRepository rideRejectionRepository;
@@ -60,11 +57,12 @@ public class RideService {
     @Transactional
     public RideResponse createRide(User user, CreateRideRequest request) {
         requirePassenger(user);
-        boolean hasActiveRide = rideRepository.findByPassengerIdOrderByRequestedAtDesc(user.getId())
-                .stream()
-                .anyMatch(ride -> PASSENGER_ACTIVE_STATUSES.contains(ride.getStatus()));
-        if (hasActiveRide) {
-            throw new BadRequestException("You already have an active ride");
+        if (request.scheduledFor() == null) {
+            if (rideRepository.countBlockingRidesForPassenger(user.getId(), Instant.now()) > 0) {
+                throw new BadRequestException("You already have an active ride");
+            }
+        } else {
+            ensurePassengerScheduledSlotAvailable(user.getId(), request.scheduledFor());
         }
         ResolvedLocation pickup = resolveLocation(request.pickupLocation(), request.pickupLocationId());
         ResolvedLocation destination = resolveLocation(request.destination(), request.destinationLocationId());
@@ -113,22 +111,31 @@ public class RideService {
     @Transactional
     public RideResponse acceptRide(User user, Long rideId) {
         DriverProfile profile = driverService.requireDriverProfile(user);
-        if (profile.getAvailabilityStatus() != AvailabilityStatus.ONLINE) {
-            throw new BadRequestException("Driver must be online to accept a ride");
-        }
-        if (driverService.hasActiveRide(user.getId())) {
-            throw new BadRequestException("Complete or cancel the active ride before accepting another ride");
-        }
         Ride ride = rideRepository.findByIdForUpdate(rideId)
                 .orElseThrow(() -> new NotFoundException("Ride not found"));
         if (ride.getStatus() != RideStatus.REQUESTED || ride.getDriver() != null) {
             throw new BadRequestException("Ride is no longer available");
         }
+        boolean futureScheduledRide = ride.getScheduledFor() != null && Instant.now().isBefore(ride.getScheduledFor());
+        boolean hasBlockingRide = driverService.hasActiveRide(user.getId());
+        if (futureScheduledRide) {
+            if (profile.getAvailabilityStatus() == AvailabilityStatus.OFFLINE) {
+                throw new BadRequestException("Go online before accepting scheduled rides");
+            }
+            ensureDriverScheduledSlotAvailable(user.getId(), ride.getScheduledFor());
+        } else {
+            if (profile.getAvailabilityStatus() != AvailabilityStatus.ONLINE) {
+                throw new BadRequestException("Driver must be online to accept a ride");
+            }
+            if (hasBlockingRide) {
+                throw new BadRequestException("Complete or cancel the active ride before accepting another ride");
+            }
+        }
 
         ride.setDriver(user);
         ride.setStatus(RideStatus.ACCEPTED);
         ride.setAcceptedAt(Instant.now());
-        profile.setAvailabilityStatus(blocksDriverNow(ride) ? AvailabilityStatus.BUSY : AvailabilityStatus.ONLINE);
+        profile.setAvailabilityStatus(hasBlockingRide || blocksDriverNow(ride) ? AvailabilityStatus.BUSY : AvailabilityStatus.ONLINE);
 
         driverProfileRepository.save(profile);
         RideResponse response = mapper.rideResponse(rideRepository.save(ride));
@@ -269,6 +276,26 @@ public class RideService {
         return ride.getStatus() == RideStatus.IN_PROGRESS
                 || (ride.getStatus() == RideStatus.ACCEPTED
                 && (ride.getScheduledFor() == null || !Instant.now().isBefore(ride.getScheduledFor())));
+    }
+
+    private void ensurePassengerScheduledSlotAvailable(Long passengerId, Instant scheduledFor) {
+        if (rideRepository.countPassengerScheduledOverlaps(
+                passengerId,
+                scheduledFor.minus(SCHEDULED_RIDE_SLOT),
+                scheduledFor.plus(SCHEDULED_RIDE_SLOT)
+        ) > 0) {
+            throw new BadRequestException("You already have a ride scheduled in this 30-minute slot");
+        }
+    }
+
+    private void ensureDriverScheduledSlotAvailable(Long driverId, Instant scheduledFor) {
+        if (rideRepository.countDriverScheduledOverlaps(
+                driverId,
+                scheduledFor.minus(SCHEDULED_RIDE_SLOT),
+                scheduledFor.plus(SCHEDULED_RIDE_SLOT)
+        ) > 0) {
+            throw new BadRequestException("You already have a ride assigned in this 30-minute slot");
+        }
     }
 
     private void ensureRideParticipantOrRequestedDriver(User user, Ride ride) {

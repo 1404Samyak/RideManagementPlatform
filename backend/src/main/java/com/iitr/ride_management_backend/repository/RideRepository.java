@@ -69,6 +69,57 @@ public interface RideRepository extends JpaRepository<Ride, Long> {
             @Param("now") Instant now
     );
 
+    @Query("""
+            select count(r) from Ride r
+            where r.passenger.id = :passengerId
+              and (
+                r.status = com.iitr.ride_management_backend.domain.RideStatus.IN_PROGRESS
+                or (
+                  r.status in (
+                    com.iitr.ride_management_backend.domain.RideStatus.REQUESTED,
+                    com.iitr.ride_management_backend.domain.RideStatus.ACCEPTED
+                  )
+                  and (r.scheduledFor is null or r.scheduledFor <= :now)
+                )
+              )
+            """)
+    long countBlockingRidesForPassenger(@Param("passengerId") Long passengerId, @Param("now") Instant now);
+
+    @Query("""
+            select count(r) from Ride r
+            where r.passenger.id = :passengerId
+              and r.scheduledFor is not null
+              and r.scheduledFor > :windowStart
+              and r.scheduledFor < :windowEnd
+              and r.status in (
+                com.iitr.ride_management_backend.domain.RideStatus.REQUESTED,
+                com.iitr.ride_management_backend.domain.RideStatus.ACCEPTED,
+                com.iitr.ride_management_backend.domain.RideStatus.IN_PROGRESS
+              )
+            """)
+    long countPassengerScheduledOverlaps(
+            @Param("passengerId") Long passengerId,
+            @Param("windowStart") Instant windowStart,
+            @Param("windowEnd") Instant windowEnd
+    );
+
+    @Query("""
+            select count(r) from Ride r
+            where r.driver.id = :driverId
+              and r.scheduledFor is not null
+              and r.scheduledFor > :windowStart
+              and r.scheduledFor < :windowEnd
+              and r.status in (
+                com.iitr.ride_management_backend.domain.RideStatus.ACCEPTED,
+                com.iitr.ride_management_backend.domain.RideStatus.IN_PROGRESS
+              )
+            """)
+    long countDriverScheduledOverlaps(
+            @Param("driverId") Long driverId,
+            @Param("windowStart") Instant windowStart,
+            @Param("windowEnd") Instant windowEnd
+    );
+
     long countByDriverIdAndStatus(Long driverId, RideStatus status);
 
     long countByDriverIdAndStatusIn(Long driverId, Collection<RideStatus> statuses);

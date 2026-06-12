@@ -1,7 +1,3 @@
-# Demo Recording Link
 
-Add the YouTube demo video link here before submission.
+https://youtu.be/O9JQJh4i4AE
 
-```text
-https://www.youtube.com/watch?v=YOUR_DEMO_VIDEO_ID
-```

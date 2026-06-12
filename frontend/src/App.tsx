@@ -37,6 +37,7 @@ import type {
 const campusCenter: [number, number] = [29.8667, 77.8966];
 
 const activeStatuses: RideStatus[] = ['REQUESTED', 'ACCEPTED', 'IN_PROGRESS'];
+const scheduledRideSlotMs = 30 * 60 * 1000;
 
 const statusMeta: Record<RideStatus, { label: string; tone: string }> = {
   REQUESTED: { label: 'Requested', tone: 'warning' },
@@ -180,6 +181,13 @@ export default function App() {
             ) {
               setPopupNotice(`Your ride is accepted by ${event.payload.driver.name}`);
             }
+            if (
+              event.type === 'DRIVER_AVAILABILITY_CHANGED'
+              && isDriverSummaryPayload(event.payload)
+              && event.payload.id === session.user.id
+            ) {
+              void refreshUser();
+            }
             if (event.type !== 'DRIVER_LOCATION_UPDATED') {
               setRealtimeTick((value) => value + 1);
             }
@@ -202,7 +210,7 @@ export default function App() {
     return () => {
       void client.deactivate();
     };
-  }, [session?.token, session?.user.id, session?.user.role]);
+  }, [refreshUser, session?.token, session?.user.id, session?.user.role]);
 
   if (!session) {
     return <AuthScreen onAuthenticated={saveSession} />;
@@ -458,6 +466,7 @@ function PassengerDashboard({
   const [rideAnimState, setRideAnimState] = useState<RideAnimationState>(null);
   const [scheduleMode, setScheduleMode] = useState(false);
   const [scheduledDateTime, setScheduledDateTime] = useState(() => toDateTimeLocalValue(new Date(Date.now() + 15 * 60_000)));
+  const [passengerClock, setPassengerClock] = useState(Date.now());
   const minScheduleDateTime = useMemo(() => toDateTimeLocalValue(new Date(Date.now() + 60_000)), []);
 
   const load = useCallback(async () => {
@@ -515,11 +524,25 @@ function PassengerDashboard({
     void load();
   }, [load, realtimeTick]);
 
-  const activeRide = useMemo(() => rides.find((ride) => activeStatuses.includes(ride.status)) ?? null, [rides]);
+  useEffect(() => {
+    const hasScheduledOpenRide = rides.some((ride) => ride.scheduledFor && activeStatuses.includes(ride.status));
+    if (!hasScheduledOpenRide) return;
+    const timer = window.setInterval(() => {
+      setPassengerClock(Date.now());
+      void load();
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [rides, load]);
+
+  const activeRide = useMemo(
+    () => rides.find((ride) => isBlockingRideNow(ride, passengerClock)) ?? null,
+    [rides, passengerClock]
+  );
   const selectedPickup = useMemo(() => locations.find((location) => location.id === pickupLocationId) ?? null, [locations, pickupLocationId]);
   const selectedDestination = useMemo(() => locations.find((location) => location.id === destinationLocationId) ?? null, [locations, destinationLocationId]);
   const completedRides = rides.filter((ride) => ride.status === 'COMPLETED');
-  const upcomingRides = rides.filter((ride) => ride.scheduledFor && activeStatuses.includes(ride.status));
+  const upcomingRides = rides.filter((ride) => isFutureScheduledRide(ride, passengerClock));
+  const requestBlockedByActiveRide = Boolean(activeRide) && !scheduleMode;
 
   async function requestRide(event: React.FormEvent) {
     event.preventDefault();
@@ -537,6 +560,10 @@ function PassengerDashboard({
       const scheduledDate = new Date(scheduledDateTime);
       if (!scheduledDateTime || !Number.isFinite(scheduledDate.getTime()) || scheduledDate.getTime() <= Date.now()) {
         setError('Scheduled pickup time must be in the future');
+        return;
+      }
+      if (findScheduledSlotConflict(scheduledDate, rides)) {
+        setError('You already have a ride scheduled in this 30-minute slot');
         return;
       }
       scheduledFor = scheduledDate.toISOString();
@@ -611,11 +638,12 @@ function PassengerDashboard({
                 />
               </label>
             )}
-            <button className="primary-button" type="submit" disabled={Boolean(activeRide) || !selectedPickup || !selectedDestination}>
+            <button className="primary-button" type="submit" disabled={requestBlockedByActiveRide || !selectedPickup || !selectedDestination}>
               {scheduleMode ? 'Schedule ride' : 'Request ride'}
             </button>
           </form>
-          {activeRide && <p className="soft-note">Finish or cancel your active ride before requesting another one.</p>}
+          {activeRide && !scheduleMode && <p className="soft-note">Finish or cancel your active ride before requesting another immediate ride.</p>}
+          {activeRide && scheduleMode && <p className="soft-note">Future bookings are allowed when the selected slot does not overlap.</p>}
         </section>
 
         <section className="panel span-two">
@@ -737,10 +765,17 @@ function DriverDashboard({
   }, [realtimeEvent]);
 
   useEffect(() => {
-    if (!dashboard?.activeRide?.scheduledFor || dashboard.activeRide.status !== 'ACCEPTED') return;
-    const timer = window.setInterval(() => setDriverClock(Date.now()), 30_000);
+    const hasScheduledAcceptedRide = dashboard?.rideHistory.some((ride) => ride.status === 'ACCEPTED' && ride.scheduledFor) ?? false;
+    const hasScheduledActiveRide = Boolean(dashboard?.activeRide?.scheduledFor && dashboard.activeRide.status === 'ACCEPTED');
+    if (!hasScheduledAcceptedRide && !hasScheduledActiveRide) return;
+    const timer = window.setInterval(() => {
+      setDriverClock(Date.now());
+      if (hasScheduledAcceptedRide) {
+        void load();
+      }
+    }, 30_000);
     return () => window.clearInterval(timer);
-  }, [dashboard?.activeRide?.scheduledFor, dashboard?.activeRide?.status]);
+  }, [dashboard?.activeRide?.scheduledFor, dashboard?.activeRide?.status, dashboard?.rideHistory, load]);
 
   async function runAction(action: () => Promise<unknown>, success: string) {
     setBusy(true);
@@ -824,6 +859,11 @@ function DriverDashboard({
   })) ?? [];
   const activeRide = dashboard?.activeRide ?? null;
   const startBlockedBySchedule = Boolean(activeRide && activeRide.status === 'ACCEPTED' && isScheduledInFuture(activeRide, driverClock));
+  const scheduledBookings = dashboard?.rideHistory.filter((ride) =>
+    ride.status === 'ACCEPTED'
+    && ride.scheduledFor
+    && isScheduledInFuture(ride, driverClock)
+  ) ?? [];
 
   return (
     <div className="dashboard-grid">
@@ -834,7 +874,7 @@ function DriverDashboard({
           <button
             className={availability === 'OFFLINE' ? 'primary-button' : 'secondary-button'}
             type="button"
-            disabled={busy || availability === 'BUSY'}
+            disabled={busy || availability === 'BUSY' || Boolean(activeRide)}
             onClick={() =>
               runAction(
                 () => (availability === 'OFFLINE' ? api.goOnline(token) : api.goOffline(token)),
@@ -865,24 +905,36 @@ function DriverDashboard({
           {incoming.length === 0 ? (
             <EmptyState text="No pending ride requests" />
           ) : (
-            incoming.map((ride) => (
-              <RideCard
-                key={ride.id}
-                ride={ride}
-                compact
-                showMap
-                actions={
-                  <div className="action-row">
-                    <button className="primary-button" type="button" disabled={busy || availability !== 'ONLINE'} onClick={() => runAction(() => api.acceptRide(token, ride.id), 'Ride accepted')}>
-                      Accept
-                    </button>
-                    <button className="ghost-button" type="button" disabled={busy} onClick={() => runAction(() => api.rejectRide(token, ride.id), 'Ride rejected')}>
-                      Reject
-                    </button>
-                  </div>
-                }
-              />
-            ))
+            incoming.map((ride) => {
+              const scheduleConflict = ride.scheduledFor
+                ? Boolean(findScheduledSlotConflict(new Date(ride.scheduledFor), dashboard?.rideHistory ?? [], ride.id))
+                : false;
+              const futureScheduledRequest = Boolean(ride.scheduledFor && isScheduledInFuture(ride, driverClock));
+              const acceptDisabled = busy
+                || scheduleConflict
+                || (futureScheduledRequest ? availability === 'OFFLINE' : availability !== 'ONLINE' || Boolean(activeRide));
+              return (
+                <RideCard
+                  key={ride.id}
+                  ride={ride}
+                  compact
+                  showMap
+                  actions={
+                    <>
+                      <div className="action-row">
+                        <button className="primary-button" type="button" disabled={acceptDisabled} onClick={() => runAction(() => api.acceptRide(token, ride.id), 'Ride accepted')}>
+                          Accept
+                        </button>
+                        <button className="ghost-button" type="button" disabled={busy} onClick={() => runAction(() => api.rejectRide(token, ride.id), 'Ride rejected')}>
+                          Reject
+                        </button>
+                      </div>
+                      {scheduleConflict && <p className="soft-note">This 30-minute slot is already assigned to another ride.</p>}
+                    </>
+                  }
+                />
+              );
+            })
           )}
         </div>
       </section>
@@ -922,10 +974,31 @@ function DriverDashboard({
       </section>
 
       <section className="panel span-two">
+        <PanelHeader icon={<CalendarClock size={20} />} title="Scheduled bookings" subtitle="Accepted future rides that do not block live availability" />
+        {scheduledBookings.length === 0 ? (
+          <EmptyState text="No accepted future bookings" />
+        ) : (
+          <div className="history-list">
+            {scheduledBookings.map((ride) => (
+              <RideCard
+                key={`driver-scheduled-${ride.id}`}
+                ride={ride}
+                actions={
+                  <button className="danger-button" type="button" disabled={busy} onClick={() => runAction(() => api.cancelRide(token, ride.id), 'Ride cancelled')}>
+                    Cancel booking
+                  </button>
+                }
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="panel span-two">
         <PanelHeader icon={<Activity size={20} />} title="Performance" subtitle="Completed rides, active rides, ratings, and history" />
         <div className="mini-stats">
           <StatCard label="Completed rides" value={dashboard?.totalRidesCompleted ?? 0} icon={<CheckCircle2 size={18} />} />
-          <StatCard label="Active rides" value={dashboard?.activeRides ?? 0} icon={<CircleDot size={18} />} />
+          <StatCard label="Live active" value={dashboard?.activeRides ?? 0} icon={<CircleDot size={18} />} />
           <StatCard label="Average rating" value={(dashboard?.averageRating ?? 0).toFixed(2)} icon={<Star size={18} />} />
           <StatCard label="Ratings" value={dashboard?.ratingCount ?? 0} icon={<Bell size={18} />} />
         </div>
@@ -1388,6 +1461,13 @@ function isDriverLocationPayload(payload: unknown): payload is DriverLocation {
     && typeof payload.longitude === 'number';
 }
 
+function isDriverSummaryPayload(payload: unknown): payload is DriverSummary {
+  return isRecord(payload)
+    && typeof payload.id === 'number'
+    && typeof payload.name === 'string'
+    && typeof payload.availabilityStatus === 'string';
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -1429,6 +1509,29 @@ function geolocationErrorMessage(error: GeolocationPositionError) {
 
 function isScheduledInFuture(ride: Ride, now = Date.now()) {
   return Boolean(ride.scheduledFor && new Date(ride.scheduledFor).getTime() > now);
+}
+
+function isBlockingRideNow(ride: Ride, now = Date.now()) {
+  if (!activeStatuses.includes(ride.status)) return false;
+  if (ride.status === 'IN_PROGRESS') return true;
+  if (!ride.scheduledFor) return true;
+  return new Date(ride.scheduledFor).getTime() <= now;
+}
+
+function isFutureScheduledRide(ride: Ride, now = Date.now()) {
+  return Boolean(ride.scheduledFor && activeStatuses.includes(ride.status) && new Date(ride.scheduledFor).getTime() > now);
+}
+
+function findScheduledSlotConflict(scheduledDate: Date, rides: Ride[], excludeRideId?: number) {
+  const scheduledAt = scheduledDate.getTime();
+  if (!Number.isFinite(scheduledAt)) return null;
+  const windowStart = scheduledAt - scheduledRideSlotMs;
+  const windowEnd = scheduledAt + scheduledRideSlotMs;
+  return rides.find((ride) => {
+    if (ride.id === excludeRideId || !ride.scheduledFor || !activeStatuses.includes(ride.status)) return false;
+    const existingScheduledAt = new Date(ride.scheduledFor).getTime();
+    return existingScheduledAt > windowStart && existingScheduledAt < windowEnd;
+  }) ?? null;
 }
 
 function toDateTimeLocalValue(date: Date) {

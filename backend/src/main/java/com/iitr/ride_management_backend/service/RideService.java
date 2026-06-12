@@ -78,7 +78,8 @@ public class RideService {
                 pickup.latitude(),
                 pickup.longitude(),
                 destination.latitude(),
-                destination.longitude()
+                destination.longitude(),
+                request.scheduledFor()
         );
         RideResponse response = mapper.rideResponse(rideRepository.save(ride));
         realtimeService.rideRequested(response);
@@ -129,7 +130,7 @@ public class RideService {
         driverProfileRepository.save(profile);
         RideResponse response = mapper.rideResponse(rideRepository.save(ride));
         realtimeService.driverAvailabilityChanged(mapper.driverSummary(profile));
-        realtimeService.rideChanged("RIDE_ACCEPTED", "Ride accepted", response);
+        realtimeService.rideChanged("RIDE_ACCEPTED", "Ride accepted by " + user.getName(), response);
         return response;
     }
 
@@ -155,6 +156,9 @@ public class RideService {
         requireAssignedDriver(user, ride);
         if (ride.getStatus() != RideStatus.ACCEPTED) {
             throw new BadRequestException("Only accepted rides can be started");
+        }
+        if (ride.getScheduledFor() != null && Instant.now().isBefore(ride.getScheduledFor())) {
+            throw new BadRequestException("Scheduled ride can be started at or after " + ride.getScheduledFor());
         }
         ride.setStatus(RideStatus.IN_PROGRESS);
         ride.setStartedAt(Instant.now());

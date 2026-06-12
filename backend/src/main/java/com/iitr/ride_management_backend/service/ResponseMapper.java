@@ -122,6 +122,7 @@ public class ResponseMapper {
                 destination.longitude(),
                 ride.getStatus(),
                 ride.getRequestedAt(),
+                ride.getScheduledFor(),
                 ride.getAcceptedAt(),
                 ride.getStartedAt(),
                 ride.getCompletedAt(),

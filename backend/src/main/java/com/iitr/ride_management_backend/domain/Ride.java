@@ -54,6 +54,8 @@ public class Ride {
     @Column(nullable = false)
     private Instant requestedAt = Instant.now();
 
+    private Instant scheduledFor;
+
     private Instant acceptedAt;
     private Instant startedAt;
     private Instant completedAt;
@@ -69,7 +71,8 @@ public class Ride {
             Double pickupLatitude,
             Double pickupLongitude,
             Double destinationLatitude,
-            Double destinationLongitude
+            Double destinationLongitude,
+            Instant scheduledFor
     ) {
         this.passenger = passenger;
         this.pickupLocation = pickupLocation;
@@ -78,5 +81,6 @@ public class Ride {
         this.pickupLongitude = pickupLongitude;
         this.destinationLatitude = destinationLatitude;
         this.destinationLongitude = destinationLongitude;
+        this.scheduledFor = scheduledFor;
     }
 }

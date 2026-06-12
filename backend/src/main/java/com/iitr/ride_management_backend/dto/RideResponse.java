@@ -15,6 +15,7 @@ public record RideResponse(
         Double destinationLongitude,
         RideStatus status,
         Instant requestedAt,
+        Instant scheduledFor,
         Instant acceptedAt,
         Instant startedAt,
         Instant completedAt,

@@ -1,92 +1,103 @@
 # Campus Ride Management Platform
 
-A full-stack ride management web app for IIT Roorkee-style campus e-rickshaw coordination. Passengers can request rides, drivers can manage availability and ride requests, and both sides receive real-time ride updates through WebSockets.
+A full-stack campus ride management web application for IIT Roorkee-style e-rickshaw coordination. The platform connects passengers and drivers through a centralized system with authentication, ride requests, driver availability, real-time updates, maps, GPS tracking, scheduling, dashboards, and feedback.
+
+This project is designed to run locally for evaluation and development. We use a local PostgreSQL database by default because it gives faster UI/API updates, avoids hosted database network delay, and makes the project easier to reproduce on any teammate's laptop.
+
+## Project Overview
+
+Campus transportation often suffers from fragmented ride coordination, unclear driver availability, and delayed passenger-driver communication. This application solves the core campus ride-management workflow:
+
+- Passengers register, log in, request rides, schedule future rides, track ride status, view maps, and rate completed rides.
+- Drivers register with vehicle and verification details, go online/offline, accept or reject ride requests, update ride lifecycle status, share GPS location, and view performance analytics.
+- The backend keeps ride assignment consistent so one ride can only be accepted by one driver.
+- WebSocket/STOMP updates keep passenger and driver dashboards synchronized in real time.
 
 ## Technology Stack
 
-- Backend: Java 21, Spring Boot, Spring Security, Spring Data JPA, WebSocket/STOMP
-- Database: PostgreSQL
-- Frontend: React, TypeScript, Vite, Leaflet, OpenStreetMap
-- UI: CSS modules-style global styling, Lucide icons, Recharts
+**Backend**
 
-## Mandatory Features Implemented
+- Java 21
+- Spring Boot 3
+- Spring Security
+- JWT authentication
+- Spring Data JPA / Hibernate
+- WebSocket/STOMP
+- PostgreSQL
+- Maven wrapper
 
-- Passenger and driver registration/login
-- JWT authentication and role-based backend access
-- Passenger profile management
-- Driver vehicle and verification information
-- Driver online/offline/busy availability
-- Available driver listing for passengers
-- Ride request creation with pickup and destination
-- Driver incoming request list
-- Accept/reject ride workflow
-- Database-locked ride acceptance so only one driver can be assigned
-- Ride lifecycle: `REQUESTED`, `ACCEPTED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`
-- Real-time driver availability, ride request, ride status, and assignment updates
-- Driver dashboard with completed rides, active rides, history, ratings, and chart
-- Passenger ratings and written feedback for completed rides
-- Average driver rating and feedback history
+**Frontend**
 
-## Optional Features Implemented
+- React 18
+- TypeScript
+- Vite
+- Leaflet with OpenStreetMap
+- Recharts
+- Lucide React icons
+- Browser Geolocation API
 
-- Live map integration with Leaflet and OpenStreetMap
-- Campus pickup/destination coordinates seeded into PostgreSQL
-- Passenger map with pickup, destination, and assigned driver marker
-- Driver map with pickup and destination for active/incoming rides
-- Driver GPS tracking through the browser Geolocation API
-- Real-time driver location updates through WebSocket events
-
-## Project Structure
-
-```text
-RideManagementPlatform/
-  backend/    Spring Boot API and WebSocket server
-  frontend/   React Vite client
-  README.md
-```
-
-## Prerequisites
-
-Teammates need these installed locally:
-
-- Java 21 JDK
-- Node.js and npm
-
-For local-only setup:
+**Local Development Tools**
 
 - PostgreSQL server
+- pgAdmin, optional database GUI
+- IntelliJ IDEA, optional backend IDE
 
-For team shared-database setup:
+## Setup Instructions
 
-- A hosted PostgreSQL database URL, username, and password
+### 1. Install Required Software
+
+Install these before running the project:
+
+- Java JDK 21
+- Node.js 18 or newer
+- npm
+- PostgreSQL
 
 Recommended but optional:
 
+- pgAdmin for viewing tables visually
 - IntelliJ IDEA for backend development
-- pgAdmin for viewing PostgreSQL tables visually
 
-IntelliJ is not strictly required to run the app because the backend includes the Maven wrapper:
+Check versions:
 
 ```bash
-cd backend
-./mvnw spring-boot:run
+java -version
+node -v
+npm -v
 ```
 
-pgAdmin is also not required to run the app. It is only a database GUI. The required database dependency is either a local PostgreSQL server or a shared hosted PostgreSQL database.
+Important: use Node.js 18 or newer. Older Node versions can fail when starting Vite.
 
-## Database Setup
+### 2. Install PostgreSQL Locally
 
-PostgreSQL should be running locally on port `5432`.
+On macOS with Homebrew:
 
-The backend is configured for:
-
-```text
-Database: ride_management_db
-Username: ride_user
-Password: ride_password
+```bash
+brew install postgresql
+brew services start postgresql
 ```
 
-If needed, create them with:
+If you installed a versioned PostgreSQL package, the service name may look like:
+
+```bash
+brew services start postgresql@18
+```
+
+Check that PostgreSQL is running:
+
+```bash
+pg_isready
+```
+
+### 3. Create Local Database And User
+
+Open the PostgreSQL terminal:
+
+```bash
+psql postgres
+```
+
+Run these SQL commands:
 
 ```sql
 CREATE ROLE ride_user WITH LOGIN PASSWORD 'ride_password';
@@ -94,128 +105,81 @@ CREATE DATABASE ride_management_db OWNER ride_user;
 GRANT ALL PRIVILEGES ON DATABASE ride_management_db TO ride_user;
 ```
 
-On macOS with Homebrew, PostgreSQL can be started with:
+If the role or database already exists, that is fine. You can continue using the existing local database.
 
-```bash
-brew services start postgresql@18
+Exit `psql`:
+
+```sql
+\q
 ```
 
-Then create the database/user using `psql` or pgAdmin Query Tool.
+### 4. Confirm Backend Database Settings
 
-Tables are created/updated automatically by Spring Boot JPA using:
-
-```properties
-spring.jpa.hibernate.ddl-auto=update
-```
-
-## Shared Database Setup
-
-Use this setup when all teammates should see the same registered users, drivers, rides, ratings, and campus location edits.
-
-Everyone still runs the backend and frontend locally, but every backend connects to the same hosted PostgreSQL database:
+The backend already defaults to this local database:
 
 ```text
-Teammate A backend -> shared hosted PostgreSQL
-Teammate B backend -> shared hosted PostgreSQL
-Teammate C backend -> shared hosted PostgreSQL
-```
-
-Do not commit database passwords or hosted URLs to GitHub. Share them privately with teammates.
-
-The backend reads these values from `backend/.env` if that file exists:
-
-```text
-DATABASE_URL
-DATABASE_USERNAME
-DATABASE_PASSWORD
-```
-
-For a Render PostgreSQL database, use the external connection details for local laptops, not the internal hostname. The JDBC URL should look like:
-
-```text
-jdbc:postgresql://<external-host>:5432/ride_management_db?sslmode=require
-```
-
-Create the local env file once:
-
-```bash
-cd backend
-cp .env.example .env
-```
-
-Then edit `backend/.env`:
-
-```properties
-DATABASE_URL=jdbc:postgresql://<external-host>:5432/ride_management_db?sslmode=require
-DATABASE_USERNAME=ride_user
-DATABASE_PASSWORD=<shared-database-password>
-JWT_SECRET=<shared-jwt-secret>
-```
-
-After that, start the backend normally:
-
-Mac/Linux:
-
-```bash
-./mvnw spring-boot:run
-```
-
-Windows:
-
-```bat
-mvnw.cmd spring-boot:run
-```
-
-`backend/.env` is ignored by Git, so do not commit it. Share the real values privately with teammates. When these values are set, the backend ignores the local database defaults and uses the shared database. If the shared database is empty, Spring Boot creates the tables automatically on startup.
-
-## pgAdmin Setup
-
-pgAdmin is optional, but it is the easiest way to view tables and manually edit campus map coordinates.
-
-1. Download pgAdmin from:
-
-```text
-https://www.pgadmin.org/download/
-```
-
-2. Open pgAdmin and create a master password if it asks.
-
-3. Register the local PostgreSQL server:
-
-```text
-Right click Servers -> Register -> Server
-```
-
-General tab:
-
-```text
-Name: Ride Management Local
-```
-
-Connection tab:
-
-```text
-Host name/address: localhost
-Port: 5432
-Maintenance database: ride_management_db
+Database URL: jdbc:postgresql://localhost:5432/ride_management_db
 Username: ride_user
 Password: ride_password
 ```
 
-4. Open the query tool:
+These defaults are configured in:
 
 ```text
-Servers -> Ride Management Local -> Databases -> ride_management_db -> Tools -> Query Tool
+backend/src/main/resources/application.properties
 ```
 
-5. Add a new campus location:
+You do not need a shared or hosted database for this project. If you previously created `backend/.env` for a hosted database, either delete it or change it to local values:
+
+```properties
+DATABASE_URL=jdbc:postgresql://localhost:5432/ride_management_db
+DATABASE_USERNAME=ride_user
+DATABASE_PASSWORD=ride_password
+JWT_SECRET=local-campus-ride-secret-change-if-needed
+```
+
+`backend/.env` is ignored by Git and should not be committed.
+
+### 5. Install Frontend Dependencies
+
+From the project root:
+
+```bash
+cd frontend
+npm install
+```
+
+If `npm run dev` ever says `vite: command not found`, run `npm install` again inside the `frontend` folder.
+
+### 6. Optional pgAdmin Setup
+
+pgAdmin is not required to run the app. Use it only if you want to inspect or edit database tables visually.
+
+Register a server with:
+
+```text
+Name: Ride Management Local
+Host: localhost
+Port: 5432
+Database: ride_management_db
+Username: ride_user
+Password: ride_password
+```
+
+To view campus locations:
+
+```sql
+SELECT * FROM campus_locations ORDER BY name;
+```
+
+To add a campus location:
 
 ```sql
 INSERT INTO campus_locations (name, category, latitude, longitude)
 VALUES ('Department of CSE', 'Academic', 29.000000, 77.000000);
 ```
 
-6. Update an existing campus location:
+To update coordinates:
 
 ```sql
 UPDATE campus_locations
@@ -224,165 +188,263 @@ SET latitude = 29.864123,
 WHERE name = 'Central Library';
 ```
 
-7. View all campus locations:
+## Running The Application
 
-```sql
-SELECT * FROM campus_locations ORDER BY name;
-```
+Run the backend and frontend in two separate terminals.
 
-Each teammate's local PostgreSQL database is separate. Data is shared between teammates only if everyone connects to the same hosted/shared PostgreSQL database.
+### Terminal 1: Start Backend
 
-## Quick Start
-
-1. Start PostgreSQL locally.
-
-2. Create the database and user:
-
-```sql
-CREATE ROLE ride_user WITH LOGIN PASSWORD 'ride_password';
-CREATE DATABASE ride_management_db OWNER ride_user;
-GRANT ALL PRIVILEGES ON DATABASE ride_management_db TO ride_user;
-```
-
-3. Start the backend.
-
-Mac/Linux:
+From the project root:
 
 ```bash
 cd backend
 ./mvnw spring-boot:run
 ```
 
-Windows:
+On Windows:
 
 ```bat
 cd backend
 mvnw.cmd spring-boot:run
 ```
 
-4. Start the frontend in a second terminal.
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-5. Open the app:
-
-```text
-http://localhost:5173
-```
-
-The frontend development server proxies `/api` and `/ws` requests to the backend on `8099`.
-
-## Run Backend
-
-Mac/Linux:
-
-```bash
-cd backend
-./mvnw spring-boot:run
-```
-
-Windows:
-
-```bat
-cd backend
-mvnw.cmd spring-boot:run
-```
-
-Backend runs at:
+Backend URL:
 
 ```text
 http://localhost:8099
 ```
 
-## Run Frontend
+Spring Boot automatically creates or updates database tables using:
+
+```properties
+spring.jpa.hibernate.ddl-auto=update
+```
+
+### Terminal 2: Start Frontend
+
+From the project root:
 
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
 
-Frontend runs at:
+Frontend URL:
 
 ```text
 http://localhost:5173
 ```
 
-During local development, Vite proxies frontend `/api` and `/ws` traffic to the Spring Boot backend on `8099`.
+Open this URL in the browser. Vite proxies API and WebSocket traffic to the backend on port `8099`.
 
-## Build And Test
+### Build Check
 
-Backend:
+Backend compile:
 
 ```bash
 cd backend
-./mvnw test
+./mvnw compile -DskipTests
 ```
 
-Frontend:
+Frontend build:
 
 ```bash
 cd frontend
 npm run build
 ```
 
-## Core API Overview
+## Feature List
+
+### Authentication And Profiles
+
+- Passenger registration and login
+- Driver registration and login
+- JWT-based authentication
+- Role-based access control
+- Passenger profile management
+- Driver vehicle details
+- Driver verification information
+- Sign out support
+
+### Driver Availability
+
+- Driver can go online
+- Driver can go offline
+- Driver availability shown to passengers
+- Driver becomes busy only when a ride actually blocks current availability
+- Future scheduled rides do not block live availability until their scheduled time arrives
+
+### Ride Request And Assignment
+
+- Passenger can request an immediate ride
+- Passenger can choose pickup and destination from campus locations
+- Driver can view incoming ride requests
+- Driver can accept or reject ride requests
+- Latest rejection is visible to the passenger
+- Ride assignment uses database locking so only one driver can accept a ride
+- Passenger receives popup notification when a ride is accepted by a driver
+
+### Ride Lifecycle
+
+Supported ride states:
+
+- `REQUESTED`
+- `ACCEPTED`
+- `IN_PROGRESS`
+- `COMPLETED`
+- `CANCELLED`
+
+Drivers can:
+
+- Accept ride
+- Reject ride
+- Start ride
+- Complete ride
+- Cancel assigned ride
+
+Passengers can:
+
+- Request ride
+- Cancel active or future ride
+- View current ride status
+- Rate completed ride
+
+### Real-Time Updates
+
+The app uses WebSocket/STOMP for:
+
+- New ride request notifications
+- Ride accepted/rejected updates
+- Ride started/completed/cancelled updates
+- Driver availability changes
+- Driver dashboard updates
+- Passenger notifications
+- Live driver location updates
+
+### Live Map And GPS
+
+- Leaflet map with OpenStreetMap tiles
+- Passenger map shows pickup marker
+- Passenger map shows destination marker
+- Passenger map shows assigned driver marker after acceptance
+- Driver map shows pickup and destination for rides
+- Driver browser GPS tracking using Geolocation API
+- Driver marker updates live when location changes
+
+### Ride Scheduling
+
+- Passenger can schedule rides for future time slots
+- Future scheduled rides appear in upcoming bookings
+- Drivers can accept or reject scheduled rides
+- Driver can only start scheduled ride at or after scheduled time
+- Scheduled rides reserve a 30-minute slot
+- Passenger cannot create overlapping scheduled rides
+- Driver cannot accept overlapping scheduled rides
+- Cancelling a future ride frees that slot for both passenger and driver
+- Future bookings do not interrupt current live rides until their scheduled time arrives
+
+### Ratings And Feedback
+
+- Passenger can rate completed rides
+- Passenger can add optional written feedback
+- Driver average rating is maintained
+- Driver feedback and rating history are visible in dashboard
+
+### Driver Dashboard
+
+- Completed ride count
+- Live active ride count
+- Average rating
+- Rating count
+- Ride history
+- Scheduled bookings
+- Active ride controls
+- Ride status chart
+- Passenger feedback history
+
+## Useful Local URLs
 
 ```text
-POST /api/auth/register/passenger
-POST /api/auth/register/driver
-POST /api/auth/login
-
-GET  /api/users/me
-PUT  /api/users/me
-
-POST /api/drivers/availability/online
-POST /api/drivers/availability/offline
-GET  /api/drivers/available
-GET  /api/drivers/requests
-GET  /api/drivers/dashboard
-POST /api/drivers/location
-
-GET  /api/locations
-
-POST /api/rides
-GET  /api/rides/my
-GET  /api/rides/{rideId}
-POST /api/rides/{rideId}/accept
-POST /api/rides/{rideId}/reject
-POST /api/rides/{rideId}/start
-POST /api/rides/{rideId}/complete
-POST /api/rides/{rideId}/cancel
-
-POST /api/ratings
+Frontend: http://localhost:5173
+Backend:  http://localhost:8099
+WebSocket: ws://localhost:8099/ws
+Database: localhost:5432/ride_management_db
 ```
 
-## WebSocket Topics
+## Troubleshooting
 
-The frontend connects to:
+**Backend port already in use**
 
-```text
-ws://localhost:8099/ws
+The backend uses port `8099`. Stop the other process using that port, or change:
+
+```properties
+server.port=${PORT:8099}
 ```
 
-Live topics used:
+inside `backend/src/main/resources/application.properties`.
+
+**Frontend says `vite: command not found`**
+
+Run:
+
+```bash
+cd frontend
+npm install
+```
+
+**Frontend fails with a crypto/getRandomValues error**
+
+Use Node.js 18 or newer:
+
+```bash
+node -v
+```
+
+**Database connection refused**
+
+Start PostgreSQL:
+
+```bash
+brew services start postgresql
+```
+
+or, for a versioned install:
+
+```bash
+brew services start postgresql@18
+```
+
+Then verify:
+
+```bash
+pg_isready
+```
+
+**Tables are missing**
+
+Start the backend once. Hibernate will create/update tables automatically because `ddl-auto=update` is enabled.
+
+## Project Structure
 
 ```text
-/topic/drivers/availability
-/topic/drivers/location
-/topic/rides/requests
-/topic/rides/{rideId}
-/topic/rides/{rideId}/driver-location
-/topic/users/{userId}/notifications
-/topic/drivers/{driverId}/dashboard
+RideManagementPlatform/
+  backend/
+    src/main/java/...       Spring Boot source code
+    src/main/resources/     application.properties
+    pom.xml                 Maven configuration
+    mvnw                    Maven wrapper
+
+  frontend/
+    src/                    React TypeScript source code
+    package.json            Frontend dependencies and scripts
+    vite.config.ts          Vite dev server and proxy config
+
+  README.md
 ```
 
 ## Notes
 
-- Deployment is intentionally out of scope because it was not required in the challenge.
-- Drivers must allow browser location permission after going online for live GPS tracking to update.
-- Bonus features such as route lines, scheduling, payments, analytics, and forecasting can be added later without changing the core structure.
+- Deployment is not required for the current challenge submission.
+- The project is configured for local PostgreSQL by default.
+- pgAdmin and IntelliJ are optional helpers, not mandatory runtime requirements.
+- Browser location permission must be allowed for driver GPS tracking.

@@ -362,6 +362,29 @@ The app uses WebSocket/STOMP for:
 - Ride status chart
 - Passenger feedback history
 
+## Deliverables
+
+The submission deliverables are kept in the `deliverables` folder:
+
+```text
+deliverables/
+  RideManagementReport_Corrected.docx
+  RideManagementReport_Corrected.pdf
+  recording link/README.md
+```
+
+Demo video link placeholder:
+
+```text
+https://www.youtube.com/watch?v=YOUR_DEMO_VIDEO_ID
+```
+
+Replace the placeholder with the final YouTube demo link before submission. The same placeholder is also available in:
+
+```text
+deliverables/recording link/README.md
+```
+
 ## Useful Local URLs
 
 ```text
